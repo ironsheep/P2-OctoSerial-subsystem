@@ -1,0 +1,23 @@
+{
+  "spin2ElasticTabstops.enable": true,
+  "spin2ElasticTabstops.blocks": {
+    "con": {
+      "tabStops": [2, 8, 16, 18, 32, 56, 80]
+    },
+    "var": {
+      "tabStops": [2, 8, 22, 32, 56, 80]
+    },
+    "obj": {
+      "tabStops": [2, 8, 16, 18, 32, 56, 80]
+    },
+    "pub": {
+      "tabStops": [2, 4, 6, 8, 10, 32, 56, 80]
+    },
+    "pri": {
+      "tabStops": [2, 4, 6, 8, 10, 32, 56, 80]
+    },
+    "dat": {
+      "tabStops": [4, 16, 26, 48, 53, 65, 80]
+    }
+  }
+}
