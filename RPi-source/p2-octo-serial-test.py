@@ -2493,7 +2493,7 @@ def taskSerialCmdListener(thrdSerPort, thrdStringQueue):
                     if '\n' in lineSoFar:
                         newLine = lineSoFar.rstrip('\r\n')
                         print_line('TASK-cmdRX rxD({})=({})'.format(len(newLine),newLine), debug=True)
-                        #thrdStringQueue.pushLine(newLine)
+                        thrdStringQueue.pushLine(newLine)
                         lineSoFar = ''
                 else:
                     print_line('TASK-cmdRX non-ASCII rxD({})=[{}]'.format(len(received_data), received_data), warning=True)
@@ -2939,6 +2939,7 @@ colorama_init()  # Initialize our color console system
 #
 baudRateP2 = 115200
 print_line('Baud rate, P2: {:,} bits/sec'.format(baudRateP2), verbose=True)
+#serialPortP2 = serial.Serial ("/dev/ttyS0", baudRateP2, timeout=1, stopbits=serial.STOPBITS_TWO)    #Open port with baud rate & timeout
 serialPortP2 = serial.Serial ("/dev/ttyS0", baudRateP2, timeout=1)    #Open port with baud rate & timeout
 p2InputQueue = RxLineQueue()
 _thread.start_new_thread(taskSerialCmdListener, ( serialPortP2, p2InputQueue, ))
@@ -2946,6 +2947,7 @@ _thread.start_new_thread(taskSerialCmdListener, ( serialPortP2, p2InputQueue, ))
 
 baudRateCmd = 115200
 print_line('Baud rate, Cmd: {:,} bits/sec'.format(baudRateCmd), verbose=True)
+#serialPortCmd = serial.Serial ("/dev/ttyAMA1", baudRateCmd, timeout=1, stopbits=serial.STOPBITS_TWO)    #Open port with baud rate & timeout
 serialPortCmd = serial.Serial ("/dev/ttyAMA1", baudRateCmd, timeout=1)    #Open port with baud rate & timeout
 cmdInputQueue = RxLineQueue()
 _thread.start_new_thread(taskSerialCmdListener, ( serialPortCmd, cmdInputQueue, ))
@@ -2954,12 +2956,29 @@ _thread.start_new_thread(taskSerialCmdListener, ( serialPortCmd, cmdInputQueue, 
 #dirWatcher = FileSystemWatcher(folder_control)
 #dirWatcher.run()
 #_thread.start_new_thread(dirWatcher.run, ( ))
+sleep(1)    # allow threads to start...
+
+def ackResponse(serPort, textStr):
+    responseStr = '{}\r\n'.format(textStr.replace('---', 'ACK'))
+    newOutLine = responseStr.encode('utf-8')
+    print_line('-resp- line({})=({})'.format(len(newOutLine), newOutLine), verbose=True)
+    serPort.write(newOutLine)
 
 def mainLoop():
     while True:             # Event Loop
-        sleep(10)
+        bFoundOne = False
+        rxLineA = p2InputQueue.popLine()
+        if len(rxLineA) > 0 and '---' in rxLineA:
+            ackResponse(serialPortP2, rxLineA)
+            bFoundOne = True
 
-sleep(1)    # allow threads to start...
+        rxLineB = cmdInputQueue.popLine()
+        if len(rxLineB) > 0 and '---' in rxLineB:
+            ackResponse(serialPortCmd, rxLineB)
+            bFoundOne = True
+
+        if not bFoundOne:
+            sleep(0.1)
 
 # run our loop
 try:

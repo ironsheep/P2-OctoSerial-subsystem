@@ -40,10 +40,11 @@ VAR
 
 
 PUB main()| testPort, portHandle, pNextString
+
     longfill(@msgCount, 0, MAX_PORTS)    ' preload w/zero's
 
     ' testing setup only (rxp, txp, ....)
-    port1Hndl := serPorts.addport(17, 16, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 1st open port
+    port1Hndl := serPorts.addport(16, 17, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 1st open port
     port2Hndl := serPorts.addport(24, 25, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 2nd open port
 {
     port3Hndl := serPorts.addport(21, 22, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
@@ -57,6 +58,7 @@ PUB main()| testPort, portHandle, pNextString
 
     serPorts.start()
 
+{
     strFmt.sFormatStr1(@txBuffer, string("%d:$sb12\r\n"), port1Hndl + 1)
     serPorts.str(port1Hndl, @txBuffer)
 
@@ -65,17 +67,32 @@ PUB main()| testPort, portHandle, pNextString
     strFmt.sFormatStr1(@txBuffer, string("%d:$sb32\r\n"), port2Hndl + 1)
     serPorts.str(port2Hndl, @txBuffer)
 
+    repeat
+        portHandle, pNextString := serPorts.rxNextString(@rxBuffer, CHAR_BUFFER_SIZE)
+        if portHandle <> -1
+            debug("* Rx [", zstr_(pNextString), "](", udec_(strsize(pNextString)), ")")
+            'validateRxString(portHandle, pNextString)
+
+
+
     repeat  ' HALT HERE for anly
+'}
 
     repeat 20
         if serPorts.txcomplete(port1Hndl)
             sendIncreTestMessage(port1Hndl)
 
+            repeat
+                portHandle, pNextString := serPorts.rxNextString(@rxBuffer, CHAR_BUFFER_SIZE)
+            until portHandle == port1Hndl
+            validateRxString(portHandle, pNextString)
+
         if serPorts.txcomplete(port2Hndl)
             sendIncreTestMessage(port2Hndl)
 
-        portHandle, pNextString := serPorts.rxNextString(@rxBuffer, CHAR_BUFFER_SIZE)
-        if portHandle <> -1
+            repeat
+                portHandle, pNextString := serPorts.rxNextString(@rxBuffer, CHAR_BUFFER_SIZE)
+            until portHandle == port1Hndl
             validateRxString(portHandle, pNextString)
 
         waitms(10)
@@ -85,7 +102,7 @@ PUB main()| testPort, portHandle, pNextString
     ' else tx a string
 
 PRI sendIncreTestMessage(portHandle)
-    strFmt.sFormatStr2(@txBuffer, string("%d:Test Message #%4d\r\n"), portHandle + 1, ++msgCount[portHandle])
+    strFmt.sFormatStr2(@txBuffer, string("%d:Test Message #%4d ---\r\n"), portHandle + 1, ++msgCount[portHandle])
     serPorts.str(portHandle, @txBuffer)
     debug("* TX #", udec_(portHandle), " [", zstr_(@txBuffer), "]")
 
