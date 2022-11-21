@@ -42,13 +42,30 @@ VAR
 PUB main()| testPort, portHandle, pNextString
     longfill(@msgCount, 0, MAX_PORTS)    ' preload w/zero's
 
-    ' testing setup only
+    ' testing setup only (rxp, txp, ....)
     port1Hndl := serPorts.addport(17, 16, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 1st open port
     port2Hndl := serPorts.addport(24, 25, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 2nd open port
-    '  port3Hndl := addport(10, 11, %0000, BAUD_PST)                      ' 3rd open port
+{
+    port3Hndl := serPorts.addport(21, 22, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
+    port3Hndl := serPorts.addport(25, 26, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
+    port3Hndl := serPorts.addport(27, 28, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
+    port3Hndl := serPorts.addport(29, 30, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
+    port3Hndl := serPorts.addport(31, 32, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
+    port3Hndl := serPorts.addport(33, 34, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
+'}
     debug("* Handles ", sdec(port1Hndl), sdec(port2Hndl))
 
     serPorts.start()
+
+    strFmt.sFormatStr1(@txBuffer, string("%d:$sb12\r\n"), port1Hndl + 1)
+    serPorts.str(port1Hndl, @txBuffer)
+
+    waitms(10)
+
+    strFmt.sFormatStr1(@txBuffer, string("%d:$sb32\r\n"), port2Hndl + 1)
+    serPorts.str(port2Hndl, @txBuffer)
+
+    repeat  ' HALT HERE for anly
 
     repeat 20
         if serPorts.txcomplete(port1Hndl)

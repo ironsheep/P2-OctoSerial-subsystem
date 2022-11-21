@@ -162,6 +162,9 @@ config_dir = parse_args.config_dir
 opt_show_tcp = parse_args.packets
 conlog_filename = parse_args.output_filename
 
+# . we won't ever in this script...
+opt_no_tcp = True
+
 opt_console_logging = False
 if len(conlog_filename) > 0:
     if os.path.exists(conlog_filename):
@@ -821,7 +824,7 @@ def taskSerialP2Listener(serPortP2, rxP2LineQueue):
                 received_data = serPortP2.readline()              # data here, read serial port
                 dataLen = len(received_data)
                 if dataLen > 0 and dataLen < 512:
-                    currLine = received_data.decode('latin-8', 'replace').rstrip()
+                    currLine = received_data.decode('latin-1', 'replace').rstrip()
                     #print_line('TASK-RX line({}=[{}]'.format(len(currLine), currLine), debug=True)
                     if currLine.isascii():
                         print_line('TASK-RX rxD({})=({})'.format(len(currLine),currLine), debug=True)
@@ -2472,25 +2475,25 @@ def p2ReportFileChanged(fSpec):
 #  TASK: dedicated Linux Command interface serial listener
 # -----------------------------------------------------------------------------
 
-def taskSerialCmdListener(serPortCmd, rxCmdLineQueue):
-    print_line('Thread: taskSerialCmdListener({}) started'.format(serPortCmd.name), verbose=True)
+def taskSerialCmdListener(thrdSerPort, thrdStringQueue):
+    print_line('Thread: taskSerialCmdListener({}) started'.format(thrdSerPort.name), verbose=True)
     # process lies from serial or from test file
     lineSoFar = ''
     while True:
         # Check if incoming bytes are waiting to be read from the serial input  buffer.
-        if serPortCmd.inWaiting() > 0:
-            received_data = serPortCmd.readline()              # data here, read serial port
+        if thrdSerPort.inWaiting() > 0:
+            received_data = thrdSerPort.readline()              # data here, read serial port
             dataLen = len(received_data)
             if dataLen > 0 and dataLen < 512:
                 #print_line("cmd-poll() : data({})[{}]".format(dataLen, binascii.hexlify(received_data)), error=True)
-                currLine = received_data.decode('latin-8', 'replace')
+                currLine = received_data.decode('latin-1', 'replace')
                 if currLine.isascii():
                     lineSoFar = '{}{}'.format(lineSoFar, currLine)
                     #print_line('TASK-cmdRX lineSoFar({})=({})'.format(len(lineSoFar),lineSoFar), debug=True)
-                    if '\n' in lineSoFar or '\r' in lineSoFar:
+                    if '\n' in lineSoFar:
                         newLine = lineSoFar.rstrip('\r\n')
                         print_line('TASK-cmdRX rxD({})=({})'.format(len(newLine),newLine), debug=True)
-                        rxCmdLineQueue.pushLine(newLine)
+                        #thrdStringQueue.pushLine(newLine)
                         lineSoFar = ''
                 else:
                     print_line('TASK-cmdRX non-ASCII rxD({})=[{}]'.format(len(received_data), received_data), warning=True)
@@ -2943,9 +2946,9 @@ _thread.start_new_thread(taskSerialCmdListener, ( serialPortP2, p2InputQueue, ))
 
 baudRateCmd = 115200
 print_line('Baud rate, Cmd: {:,} bits/sec'.format(baudRateCmd), verbose=True)
-serialPortCmd = serial.Serial ("/dev/ttyAMA0", baudRateCmd, timeout=1)    #Open port with baud rate & timeout
+serialPortCmd = serial.Serial ("/dev/ttyAMA1", baudRateCmd, timeout=1)    #Open port with baud rate & timeout
 cmdInputQueue = RxLineQueue()
-#_thread.start_new_thread(taskSerialCmdListener, ( serialPortCmd, cmdInputQueue, ))
+_thread.start_new_thread(taskSerialCmdListener, ( serialPortCmd, cmdInputQueue, ))
 
 # start our file-system watcher watching for file changes in folder_control
 #dirWatcher = FileSystemWatcher(folder_control)
