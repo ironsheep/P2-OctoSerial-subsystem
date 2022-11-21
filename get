@@ -1,0 +1,19 @@
+#!/bin/bash
+
+SRC_SPIN_DIR=/Users/stephen/Dropbox/PropV2-Shared/Projects/P2-octoSerialSW
+DST_SPIN_DIR="/Users/stephen/Projects/Projects-ExtGit/IronSheepProductionsLLC/Projects Propeller/P2-octoSerial/P2-OctoSerial-subsystem"
+
+(set -x;scp pi@piprop-wifi.home:/opt/P2-octoSerial/* "${DST_SPIN_DIR}/RPi-source")
+
+FILES=$(cat <<_FILE_EOF_
+demo_octoSystem.spin2
+isp_mem_strings.spin2
+isp_octoport_serial.spin2
+isp_string_queue.spin2
+jm_nstrings.spin2
+_FILE_EOF_
+)
+
+for FILBASE in ${FILES}; do
+	(set -x;cp -p "${SRC_SPIN_DIR}"/${FILBASE} "${DST_SPIN_DIR}/P2-source")
+done

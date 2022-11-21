@@ -1,0 +1,91 @@
+CON { timing }
+
+  CLK_FREQ = 300_000_000                                        ' system freq as a constant
+'  MS_001   = CLK_FREQ / 1_000                                   ' ticks in 1ms
+'  US_001   = CLK_FREQ / 1_000_000                               ' ticks in 1us
+
+  BAUD_PST  = 115_200                                            ' terminal baud rate
+  BAUD_OCTO_PORTS  = 115_200                                    ' our serial ports baud rate
+
+  MAX_PORTS  = 8                                                ' max ports for testing
+
+  CHAR_BUFFER_SIZE  = 80                                    ' room for building tx strings
+
+  _clkfreq = CLK_FREQ                                           ' set system clock
+
+CON { fixed io pins }
+
+  RX1      = 63  { I }                                          ' programming / debug
+  TX1      = 62  { O }
+
+  SF_CS    = 61  { O }                                          ' serial flash
+  SF_SCK   = 60  { O }
+  SF_SDO   = 59  { O }
+  SF_SDI   = 58  { I }
+
+OBJ
+        serPorts  : "isp_octoport_serial"               ' 8-port driver
+        serQue    : "isp_string_queue"                  ' Rx Message Que
+        strFmt    : "isp_mem_strings"                  ' in-memory formatted strings
+
+VAR
+
+  byte  port1Hndl                                               ' named ports for testing
+  byte  port2Hndl
+  byte  port3Hndl
+
+  byte  txBuffer[CHAR_BUFFER_SIZE+1]
+  byte  rxBuffer[CHAR_BUFFER_SIZE+1]
+  LONG  msgCount[MAX_PORTS]
+
+
+PUB main()| testPort, portHandle, pNextString
+    longfill(@msgCount, 0, MAX_PORTS)    ' preload w/zero's
+
+    ' testing setup only
+    port1Hndl := serPorts.addport(17, 16, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 1st open port
+    port2Hndl := serPorts.addport(24, 25, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 2nd open port
+    '  port3Hndl := addport(10, 11, %0000, BAUD_PST)                      ' 3rd open port
+    debug("* Handles ", sdec(port1Hndl), sdec(port2Hndl))
+
+    serPorts.start()
+
+    repeat 20
+        if serPorts.txcomplete(port1Hndl)
+            sendIncreTestMessage(port1Hndl)
+
+        if serPorts.txcomplete(port2Hndl)
+            sendIncreTestMessage(port2Hndl)
+
+        portHandle, pNextString := serPorts.rxNextString(@rxBuffer, CHAR_BUFFER_SIZE)
+        if portHandle <> -1
+            validateRxString(portHandle, pNextString)
+
+        waitms(10)
+
+    repeat
+    ' if have rx string get it
+    ' else tx a string
+
+PRI sendIncreTestMessage(portHandle)
+    strFmt.sFormatStr2(@txBuffer, string("%d:Test Message #%4d\r\n"), portHandle + 1, ++msgCount[portHandle])
+    serPorts.str(portHandle, @txBuffer)
+    debug("* TX #", udec_(portHandle), " [", zstr_(@txBuffer), "]")
+
+PRI validateRxString(portHandle, pString)
+    debug("* RX #", udec_(portHandle), " [", zstr_(pString), "]")
+
+PUB rxtest() | n
+' test recieve
+  n := serPorts.rx(0)
+
+PUB txtest() | i, s
+  ' test transmit
+  i := 1
+  repeat
+    serPorts.tx(port1Hndl, i)                                               ' output port 0
+    serPorts.tx(1, i+10)                                                 ' output port 1
+'    tx(port2Hndl, i+15)                                           ' output port 1
+    i++
+    if i == 100
+      i := 1

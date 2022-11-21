@@ -1,0 +1,609 @@
+'' =================================================================================================
+''
+''   File....... isp_octoport_serial.spin2
+''   Purpose.... Create multiple serial ports using a single cog
+''               Buffered serial communications using smart pins
+''               -- mostly matches jm_FullDuplexSerial.spin2
+''               -- does NOT support half-duplex communications using shared RX/TX pin
+''   Authors.... Stephen M Moraco
+''               -- based on work by Bob Sweeney
+''               -- based on work by Jon McPhalen
+''               -- based on work by Chip Gracey
+''               -- see below for terms of use
+''   E-mail..... stephen@ironsheep.biz
+''   Started....
+''   Updated.... 18 Nov 2022
+''
+'' =================================================================================================
+
+{{
+   Run several (8 default) serial ports at a time. Run 'AddPort' prior to 'Start' to configure smart pins.
+   AddPort return   value is the portID. Code is based on jm_fullduplexserial.spin2.
+   More than 8 ports can be run by adjusting the MAX_PORT value and pasm array variable sizes to accomodate
+   more ports. Each port can have either a tx and rx pin associated with it.
+
+   Initial version does not contain all methods in jm_fullduplexserial.spin2 in order to simplify for
+   intial testing purposes
+
+   Note: Buffer size no longer has to be power-of-2 integer.
+
+   The smart pin uarts use a 16-bit value for baud timing which can limit low baud rates for
+   some system frequencies -- beware of these limits when connecting to older devices.
+
+    Baud     20MHz    40MHz    80MHz    100MHz    200MHz    300MHz
+   ------    -----    -----    -----    ------    ------    ------
+      300       No       No       No        No        No        No
+      600      Yes       No       No        No        No        No
+     1200      Yes      Yes       No        No        No        No
+     2400      Yes      Yes      Yes       Yes        No        No
+     4800      Yes      Yes      Yes       Yes       Yes       Yes
+
+}}
+
+CON { PUBLIC Interface Enums }
+
+' "or" the following flag-constants together to build a serial mode value (or use MODE_NONE if no flags needed)
+'  (e.g.,  MY_PORT_MODE = MODE_FLAG_INV_RX | MODE_OPEN_DRN_SRC_TX)
+
+' /-- mode.... %0xx1 = invert rx
+  MODE_FLAG_INV_RX = %0001
+'             %0x1x = invert tx
+  MODE_FLAG_INV_TX = %0010
+'             %01xx = open-drain/open-source tx
+  MODE_OPEN_DRN_SRC_TX = %0100
+' \-- mode....
+
+  MODE_NONE = 0 ' no mode values needed
+
+  PIN_NOT_NEEDED = -1
+  CHAR_NOT_READY = -1
+
+    ' tx pin pull-up constants
+  #0, PU_NONE, PU_1K5, PU_3K3, PU_15K                           ' pull-up options
+
+CON { ASCII control chars }
+
+  HOME     =  1
+  CRSR_XY  =  2
+  CRSR_LF  =  3
+  CRSR_RT  =  4
+  CRSR_UP  =  5
+  CRSR_DN  =  6
+  BELL     =  7
+  BKSP     =  8
+  TAB      =  9
+  LF       = 10
+  CLR_EOL  = 11
+  CLR_DN   = 12
+  CR       = 13
+  CRSR_X   = 14
+  CRSR_Y   = 15
+  CLS      = 16
+
+CON { driver constants }
+
+    ' serial specific constants
+    '   WARNING: BUF_SIZE must fit into immediate value of PASM instruction. Therefore: BUF_SIZE = [0-511]!
+    BUF_SIZE       = 32                                           ' size of rx and tx buffers
+    MAX_PORT       = 8                                            ' set to number of ports to be used (0-8)
+    MAX_LONG_TABLES = 9                                            ' set to number of LONG arrays to be passed to driver
+
+CON { Logic Analyzer (LA) Pins }
+
+    LA_BASE_PIN = 8
+    LA_TX_PIN = LA_BASE_PIN + 3
+    LA_RX_PIN = LA_BASE_PIN + 4
+
+    PINS_PORT_NBR = LA_BASE_PIN addpins 2
+
+VAR
+    LONG  xcvr8cog                                                     ' cog flag/id
+
+    ' /----------------------------------------------
+    ' . structure copied to PASM driver before start
+    LONG  activPortCount                                               ' total number of open ports (0-7)
+    LONG  pinRx[MAX_PORT]                                         ' rx pin array - cog rxbuff
+    LONG  pinTx[MAX_PORT]                                         ' tx pin array - cog txbuff
+    LONG  pRxBuf[MAX_PORT]                                       ' ptr array to port tx buffer hub address - cog p_rxbuf
+    LONG  pTxBuf[MAX_PORT]                                       ' ptr array to port rx buffer hub address - cog p_txbuf
+    LONG  pRxHead[MAX_PORT]                                        ' cog ptr to rxHeadIdx[] hub address start
+    LONG  pTxHead[MAX_PORT]                                        ' cog ptr to txHeadIdx[] hub address start
+    LONG  pRxTail[MAX_PORT]                                        ' cog ptr to txTailIdx[] hub address start
+    LONG  pTxTail[MAX_PORT]                                        ' cog ptr to txTailIdx[] hub address start
+    LONG  pRxOverflow[MAX_PORT]                                        ' cog ptr to txTailIdx[] hub address start
+    ' \----------------------------------------------
+
+    LONG  rxHeadIdx[MAX_PORT]                                     ' rx/tx head/tail array of indexes
+    LONG  rxTailIdx[MAX_PORT]                                     '
+    LONG  txHeadIdx[MAX_PORT]                                     '
+    LONG  txTailIdx[MAX_PORT]                                     '
+    LONG  txDelay[MAX_PORT]                                       ' port baud rate
+    LONG  bRxOverflow[MAX_PORT]                                       ' port baud rate
+
+    BYTE  rxbuf[BUF_SIZE * MAX_PORT]                              ' buffers - set MAX_PORT to actual open ports
+    BYTE  txbuf[BUF_SIZE * MAX_PORT]
+
+    BYTE  pbuf[80]                                                ' padded strings
+
+    LONG  bHaveStr[MAX_PORT]
+    LONG  strBuffIdx[MAX_PORT]
+    BYTE  strBuffer[BUF_SIZE * MAX_PORT]
+
+
+PUB null()
+'' This is not a top-level object
+
+'----------------------------------------------------------------------------------------------------
+
+PUB addport(rxp, txp, mode, baud, txPullup) : portHandle | baudcfg, spmode, tdelay, portIdx, validPin, bDupePin
+'' call method before start(). miniumum 1 port required
+'' load data arrays and setup smartpins
+'' does not check for port duplication
+'' run addport at least once before calling start method
+'' returns {portHandle} to use when accessing this port (value: (0 to MAX_PORT-1) or -1 if error)
+'' -- rxp... receive pin (-1 if not used)
+'' -- txp... transmit pin (-1 if not used)
+'' -- mode.... %0xx1 = invert rx (MODE_FLAG_INV_RX)
+''             %0x1x = invert tx (MODE_FLAG_INV_TX)
+''             %01xx = open-drain/open-source tx (MODE_OPEN_DRN_SRC_TX)
+    portHandle := -1
+    if (rxp == txp)                                            ' pins must be unique
+        debug("* Invalid Rx pin (", sdec(rxp), ") can not be same pin as Tx (", sdec(txp), ")")
+        abort
+
+    validPin := -1 #> rxp <# 63
+    if rxp <> validPin
+        debug("* Invalid Rx pin (", sdec(rxp), ")")
+        abort
+
+    validPin := -1 #> txp <# 63
+    if txp <> validPin
+        debug("* Invalid Tx pin (", sdec(txp), ")")
+        abort
+
+    ' check if pin used by any other ports
+    if activPortCount > 0
+        bDupePin := FALSE
+        repeat portIdx from 0 to activPortCount - 1
+            if pinRx[activPortCount] == rxp or pinTx[activPortCount] == rxp
+                debug("* Dupe: Rx pin (", sdec(rxp), ") already in use")
+                bDupePin := TRUE
+                quit
+            if pinRx[activPortCount] == txp or pinTx[activPortCount] == txp
+                debug("* Dupe: Tx pin (", sdec(txp), ") already in use")
+                bDupePin := TRUE
+                quit
+        if bDupePin
+            abort
+
+    if activPortCount >= MAX_PORT                                    ' port in range
+        debug("* ERROR: all ports in use. More than 8 ports not supported!")
+        abort
+    else
+        portHandle := activPortCount++                      ' return port number (0-7)
+
+    case txPullup
+        PU_NONE : txPullup := P_HIGH_FLOAT                            ' use external pull-up
+        PU_1K5  : txPullup := P_HIGH_1K5                              ' 1.5k
+        PU_3K3  : txPullup := P_HIGH_1MA                              ' acts like ~3.3k
+        other   : txPullup := P_HIGH_15K                              ' 15K
+
+    txDelay[portHandle] := clkfreq / baud * 11                      ' tix to transmit one BYTE
+
+    baudcfg := muldiv64(clkfreq, $1_0000, baud) & $FFFFFC00        ' set bit timing
+    baudcfg |= (8-1)                                               ' set bits (8)
+
+    pinRx[portHandle] := rxp                                     ' save rx pin
+
+    if pinRx[portHandle] >= 0                                      ' configure rx pin if used
+        spmode := P_ASYNC_RX
+        if (mode.[0])
+            spmode |= P_INVERT_IN
+        pinstart(pinRx[portHandle], spmode, baudcfg, 0)
+
+    pinTx[portHandle] := txp                                     ' save tx pin
+
+    if pinTx[portHandle] >= 0                                      ' configure tx pin if used
+        spmode := P_ASYNC_TX | P_OE | txPullup
+        case mode.[2..1]
+            %01 : spmode |= P_INVERT_OUTPUT
+            %10 : spmode |= P_HIGH_FLOAT                               ' requires external pull-up
+            %11 : spmode |= P_INVERT_OUTPUT | P_LOW_FLOAT              ' requires external pull-down
+        pinstart(pinTx[portHandle], spmode, baudcfg, 0)
+
+    ' load buffer pointers
+    pRxBuf[portHandle] := @BYTE[@rxbuf][portHandle * BUF_SIZE]               ' ptr to hub buffer address
+    pTxBuf[portHandle] := @BYTE[@txbuf][portHandle * BUF_SIZE]
+
+    ' load pointers to head/tail indexes
+    pRxHead[portHandle] := @LONG[@rxHeadIdx][portHandle]                        ' ptr to hub addresses
+    pTxHead[portHandle] := @LONG[@txHeadIdx][portHandle]
+    pRxTail[portHandle] := @LONG[@rxTailIdx][portHandle]
+    pTxTail[portHandle] := @LONG[@txTailIdx][portHandle]
+
+    ' mark tx and rx as empty
+    rxHeadIdx[portHandle] := txHeadIdx[portHandle] := 0
+    rxTailIdx[portHandle] := txTailIdx[portHandle] := 0
+
+    ' start with NO error indication
+    bRxOverflow[portHandle] := FALSE
+    pRxOverflow[portHandle] := @LONG[@bRxOverflow][portHandle]
+
+    ' init string receiver control data
+    bHaveStr[portHandle] := FALSE
+    strBuffIdx[portHandle] := 0
+
+  debug("---------------")
+  debug(uhex(portHandle))
+  debug(uhex(pinRx[portHandle]))
+  debug(uhex(pinTx[portHandle]))
+  debug(uhex(pRxBuf[portHandle]))
+  debug(uhex(pTxBuf[portHandle]))
+  debug(uhex(pRxHead[portHandle]))
+  debug(uhex(pTxHead[portHandle]))
+  debug(uhex(pRxTail[portHandle]))
+  debug(uhex(pTxTail[portHandle]))
+  debug(uhex(rxHeadIdx[portHandle]))
+  debug(uhex(txHeadIdx[portHandle]))
+  debug(uhex(rxTailIdx[portHandle]))
+  debug(uhex(txTailIdx[portHandle]))
+  debug(uhex(bRxOverflow[portHandle]))
+  debug(uhex(pRxOverflow[portHandle]))
+
+
+PUB start() : ok
+'' Start new cog
+  stop()
+  ok := xcvr8cog := coginit(COGEXEC_NEW, @uart_8_port, @activPortCount) + 1         ' start uart manager xcvr8cog
+
+' reminder - circ queue basics:
+'   PUSH/ADD to tail
+'   POP/REMOVE from head
+'   if head == tail then queue is empty
+
+PUB stop()
+'' Stop serial driver
+'' -- frees the cog if driver was running
+    if (xcvr8cog)                                                   ' xcvr8cog active?
+        cogstop(xcvr8cog - 1)                                       '  yes, shut it down
+        xcvr8cog := 0                                               '  and mark stopped
+
+CON ' ----- Receive Routines -----
+
+PUB rx(portHandle) : b
+'' Pulls BYTE from receive buffer if available
+'' -- will wait if buffer is empty
+'   POP/REMOVE from head
+'   if head == tail then queue is empty
+    if isValidPortHandle(portHandle)
+        repeat while rxTailIdx[portHandle] == rxHeadIdx[portHandle]             ' hold while buffer empty
+
+        b := rxbuf[(portHandle * BUF_SIZE) + rxHeadIdx[portHandle]]             ' get a BYTE
+        rxHeadIdx[portHandle] := (rxHeadIdx[portHandle] + 1) +// BUF_SIZE
+
+
+PUB rxcheck(portHandle) : b
+'' Pulls BYTE from receive buffer if available
+'' -- returns -1 if buffer is empty
+'   POP/REMOVE from head
+'   if head == tail then queue is empty
+    if isValidPortHandle(portHandle)
+        if rxTailIdx[portHandle] <> rxHeadIdx[portHandle]                       ' something in buffer?
+            b := rxbuf[(portHandle * BUF_SIZE) + rxHeadIdx[portHandle]]         ' get a BYTE
+            rxHeadIdx[portHandle] := (rxHeadIdx[portHandle] + 1) +// BUF_SIZE
+        else
+            b := -1                                                             ' mark no BYTE available
+
+PUB rxtime(portHandle, ms) : b | mstix, t
+'' Wait ms milliseconds for a BYTE to be received
+'' -- returns -1 if no BYTE received, $00..$FF if BYTE
+    if isValidPortHandle(portHandle)
+        mstix := clkfreq / 1000
+
+        t := getct()
+        repeat until ((b := rxcheck(portHandle)) >= 0) || (((getct()-t) / mstix) >= ms)
+
+
+PUB rxtix(portHandle, tix) : b | t
+'' Waits tix clock ticks for a BYTE to be received
+'' -- returns -1 if no BYTE received
+
+    if isValidPortHandle(portHandle)
+        t := getct()
+        repeat until ((b := rxcheck(portHandle)) >= 0) || ((getct()-t) >= tix)
+
+PUB rxavailable(portHandle) : count
+'' Returns # of bytes waiting in rx buffer
+    if isValidPortHandle(portHandle)
+        count := 0
+        if (rxTailIdx[portHandle] <> rxHeadIdx[portHandle])                        ' if BYTE(s) available
+            count := rxHeadIdx[portHandle] - rxTailIdx[portHandle]                   ' get count
+            if (count < 0)
+                count += BUF_SIZE                                         ' fix for wrap around
+
+PUB rxflush(portHandle)
+'' Flush receive buffer
+    if isValidPortHandle(portHandle)
+        repeat while (rxcheck(portHandle) >= 0)
+
+PUB rxNextString(pUserBuf, nBufLen) : portHandle, pNextString | bStringComplete, nChar, nPortHandle, bAllEmpty, pString
+'' return pointer to avail string or -1 as portHandle if no strings available
+    portHandle := -1
+
+    ' if we already have strings, locate 1 to return
+    portHandle, pNextString := returnNextCompleteString(pUserBuf, nBufLen)
+
+    ' receive more bytes
+    repeat
+        bAllEmpty := TRUE
+        bStringComplete := FALSE
+        repeat nPortHandle from 0 to activPortCount - 1
+            ' point to buffer for string
+            pString := @BYTE[@strBuffer][nPortHandle * BUF_SIZE]
+            nChar := rxcheck(nPortHandle)
+            if nChar <> CHAR_NOT_READY
+                BYTE[pString][strBuffIdx[nPortHandle]++] := nChar
+                if nChar == $0a
+                    BYTE[pString][strBuffIdx[nPortHandle]++] := 0
+                    LONG [@bHaveStr][nPortHandle] := TRUE
+                    bStringComplete := TRUE
+                bAllEmpty := FALSE
+        ' checked all ports, if completed a string, bail or if NO port had a byte ready bail
+        if bAllEmpty or bStringComplete
+            quit
+
+    if portHandle == -1 and bStringComplete
+        ' if completed a string in this attempt then return it
+        portHandle, pNextString := returnNextCompleteString(pUserBuf, nBufLen)
+
+PRI returnNextCompleteString(pUserBuf, nBufLen) : portHandle, pNextString | nPortHandle, pString, newLen
+' look for a finished string to return
+    portHandle := -1
+    repeat nPortHandle from 0 to activPortCount - 1
+        if LONG [@bHaveStr][nPortHandle] == TRUE
+            portHandle := nPortHandle
+            pNextString := pUserBuf
+            ' clear receiving buffer
+            bytefill(pUserBuf, 0, nBufLen)
+            ' copy received string to user buffer
+            pString := @BYTE[@strBuffer][nPortHandle * BUF_SIZE]
+            newLen := strsize(pString)
+            if newLen > nBufLen - 1
+                newLen := nBufLen - 1
+            bytemove(pUserBuf, pString, newLen)
+            ' reset string byte pointer
+            strBuffIdx[nPortHandle] :=0
+            quit
+
+CON ' ----- Transmit Routines -----
+
+PUB tx(portHandle, b) | tempTailIdx
+'' Move BYTE into transmit buffer if room is available
+'' -- will wait if buffer is full
+'   PUSH/ADD to tail
+    if isValidPortHandle(portHandle)
+        repeat
+            tempTailIdx := (rxTailIdx[portHandle] + 1) +// BUF_SIZE
+            if tempTailIdx == txHeadIdx[portHandle]
+                ' Would overflow, no room for xmit BYTE
+                quit
+
+            txbuf[(portHandle * BUF_SIZE) + tempTailIdx] := b             ' move to buffer p_rxhead_idx location
+            rxTailIdx[portHandle] := tempTailIdx
+
+PUB txcomplete(portHandle) : bCompleteStatus
+'' Returns T/F where T means buffer
+    bCompleteStatus := FALSE
+    if isValidPortHandle(portHandle)
+        bCompleteStatus := (txTailIdx[portHandle] == txHeadIdx[portHandle])
+
+PUB txn(portHandle, b, n)
+'' Emit BYTE n times
+    if isValidPortHandle(portHandle)
+        repeat n
+            tx(portHandle, b)
+
+PUB str(portHandle, p_str)
+'' Emit z-string at p_str
+    if isValidPortHandle(portHandle)
+        repeat (strsize(p_str))
+            tx(portHandle, BYTE[p_str++])
+
+
+PUB substr(portHandle, p_str, len) | b
+'' Emit len characters of string at p_str
+'' -- aborts if end of string detected
+    if isValidPortHandle(portHandle)
+        repeat len
+            b := BYTE[p_str++]
+            if (b > 0)
+                tx(portHandle, b)
+            else
+                quit
+
+
+PUB txflush(portHandle)
+'' Wait for transmit buffer to empty
+'' -- will delay one BYTE period after buffer is empty
+'   PUSH/ADD to tail
+    if isValidPortHandle(portHandle)
+        repeat until (txTailIdx[portHandle] == txHeadIdx[portHandle])   ' let buffer empty
+        waitct(getct() + txDelay[portHandle])                           ' delay for last BYTE
+
+PRI isValidPortHandle(portHandle) : bValidStatus
+' simple check to ensure we have a valid port index before indexing into memory with it
+    bValidStatus := FALSE
+    if portHandle >= 0 and portHandle < MAX_PORT
+        bValidStatus := TRUE
+    else
+        debug("8S: Invalid Port Handle ",sdec(portHandle))
+
+CON ' ----- 8-Port transceiver in Cog -----
+
+DAT { smart pin uart/buffer manager }
+'---+-----------+---------+---------------------+----+-----------+--------------+
+                org
+uart_8_port
+                ' read hub arrays into cog
+                rdlong    portnum, ptra++            ' get # of open ports
+                setq      #(MAX_PORT*MAX_LONG_TABLES) ' load number of longs to copy
+                rdlong    rxpin, ptra                ' block copy hub variables to cog
+                sub       portnum, #1                ' subtract 1 to get actual port number max value
+
+                drvl      pgrpPortNbr                ' clear port nbr LA pins
+                drvl      pinTskTx                ' clear port nbr LA pins
+                drvl      pinTskRx                ' clear port nbr LA pins
+
+uart_main                                            ' loop through each port, get rx, tx pins
+                mov       portctr, #0                ' initialize portctr = 0
+                setq      #$07                       ' set emit lower 3-bits
+                muxq      pgrpPortNbr, portctr       ' write port # to LA bits
+                '-------------------------------
+.loop                                                ' get offsets for array values
+                alts      portctr, #rxpin            ' add portctr p_rxhead_idx to rxpin - rxpin[portctr]
+                mov       rxd, 0-0                     ' copy rxpin to rxd
+
+                alts      portctr, #txpin            ' add portctr p_rxhead_idx to txpin - txpin[portctr]
+                mov       txd, 0-0                     ' copy txpin to txd
+                                                     ' rxpin available, jump to rx_serial or tx_serial
+                testb     rxd,  #31             wc      ' rx pin in use? -test for -1 when no pin saved
+    if_nc       call      #rx_serial
+
+                testb     txd, #31              wc   ' tx in use? -test for -1
+    if_nc       call      #tx_serial
+                                                     ' increment counter to next port. if portctr =
+                                                     ' open ports, reset portctr to 0 and loop
+                incmod    portctr, portnum      wc   ' check if portctr = open ports
+    if_nc       jmp       #.loop                                ' repeat loop for each open port
+
+                jmp       #uart_main
+
+                '-------------------------------
+                ' reminder - circ queue basics:
+                ' PUSH/ADD ( we add to tail )
+                '   incr tail (mod que size)
+                '   if tail == head then OVERFLOW (full)
+                '   else enque char
+
+rx_serial       testp     rxd                   wc   ' anything waiting on smartpin?
+    if_nc       ret                                  ' NO: return
+                outnot    pinTskRx
+                rdpin     newChar, rxd               ' read new BYTE from smartpin ( allowing smart pin to rx next )
+                shr       newChar, #24               ' align lsb
+
+                alts      portctr, #p_rxhead         ' Get rx head index from hub into temp var
+                mov       p_rxhead_idx, 0-0
+                rdlong    p_queue, p_rxhead_idx
+
+                alts      portctr, #p_rxtail         ' Get rx tail index from hub
+                mov       p_rxtail_idx, 0-0
+                rdlong    queIdx, p_rxtail_idx
+
+                incmod    queIdx, #BUF_SIZE          ' increment rx tail index (modulus math)
+                cmp       p_queue, queIdx       wz   ' Q: HeadIdx == TailIdx?
+    if_e        altd      portctr, #p_rxOvflw        ' YES, get ptr to Rx Overflow Error Boolean
+    if_e        mov       0-0, trueBOOL              ' YES, set bool to TRUE
+                outnot    pinTskRx
+    if_e        ret                                  ' YES, queue is FULL, exit (w/error) without saving char
+
+                alts      portctr, #p_rxbuf          ' get rx-buffer ptr
+                mov       p_queue, 0-0
+                add       p_queue, queIdx            ' add offset to rx TAIL
+
+                wrbyte    newChar, p_queue           ' write char to queue
+                wrlong    queIdx, p_rxtail_idx       ' write rx tail index back to hub
+                outnot    pinTskRx
+                RET
+
+                '-------------------------------
+                ' reminder - circ queue basics:
+                ' POP/REMOVE ( we remove from head )
+                '   if head == tail then UNDERFLOW (empty)
+                '   else
+                '     incr head (mod que size)
+                '     deque char
+tx_serial
+'---+-----------+---------+---------------------+----+-----------+--------------+
+                rdpin     p_queue, txd          wc   ' Q: still transmitting last char?
+    if_c        ret                                  ' YES: abort (too early to send next)
+                outnot    pinTskTx
+
+                alts      portctr, #p_txhead         ' Get tx head index from hub
+                mov       p_txhead_idx, 0-0
+                rdlong    queIdx, p_txhead_idx
+
+                alts      portctr, #p_txtail         ' Get tx tail index from hub into temp var
+                mov       p_txtail_idx, 0-0
+                rdlong    p_queue, p_txtail_idx
+
+                cmp       p_queue, queIdx       wz   ' Q: HeadIdx == TailIdx?
+    if_e        outnot    pinTskTx
+    if_e        ret                                  ' YES, queue is EMPTY, we're done
+
+                alts      portctr, #p_txbuf          ' get base address of Tx Queue
+                mov       p_queue, 0-0
+                add       p_queue, queIdx            ' add offset to head
+                rdbyte    newChar, p_queue           ' get char from queue[head]
+                wypin     newChar, txd               ' tell tx pin to send this character
+
+                incmod    queIdx, #BUF_SIZE          ' increment tx head index (modulus math)
+                wrlong    queIdx, p_txhead_idx       ' write head index back to hub
+                outnot    pinTskTx
+                ret
+                '-------------------------------
+
+pgrpPortNbr     long      LA_BASE_PIN addpins 2
+pinTskTx        long      LA_TX_PIN addpins 0
+pinTskRx        long      LA_RX_PIN addpins 0
+
+trueBOOL        LONG      TRUE
+portnum         LONG      1                          ' total # ports
+rxpin           LONG      0[MAX_PORT]                ' rx pin array
+txpin           LONG      0[MAX_PORT]                ' tx pin array
+p_rxbuf         LONG      0[MAX_PORT]                ' ptr to pRxBuf
+p_txbuf         LONG      0[MAX_PORT]                ' ptr to pTxBuf
+p_rxhead        LONG      0[MAX_PORT]                ' ptr to rxHeadIdx
+p_txhead        LONG      0[MAX_PORT]                ' ptr to txHeadIdx
+p_rxtail        LONG      0[MAX_PORT]                ' prt to rxTailIdx
+p_txtail        LONG      0[MAX_PORT]                ' prt to txTailIdx
+p_rxOvflw       LONG      0[MAX_PORT]                ' RX Overflow Flags
+
+portctr         res       1                          ' loop counter
+rxd             res       1                          ' rx pin
+txd             res       1                          ' tx pin
+p_rxhead_idx    res       1
+p_rxtail_idx    res       1
+p_txhead_idx    res       1
+p_txtail_idx    res       1
+p_queue         res       1                          ' work vars
+queIdx          res       1
+newChar         res       1
+
+'                fit       472                       ' $1D8 P1
+                fit     496                          ' $1f0 P2
+
+
+CON { license }
+
+{{
+
+  Terms of Use: MIT License
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this
+  software and associated documentation files (the "Software"), to deal in the Software
+  without restriction, including without limitation the rights to use, copy, modify,
+  merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+  permit persons to whom the Software is furnished to do so, subject to the following
+  conditions:
+
+  The above copyright notice and this permission notice shall be included in all copies
+  or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+  INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+  PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+  CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+  OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+}}
