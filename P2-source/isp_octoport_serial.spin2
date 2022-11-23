@@ -147,18 +147,23 @@ VAR
     LONG  strBuffIdx[MAX_PORTS]
     BYTE  strBuffer[BUF_SIZE * MAX_PORTS]
 
-
     LONG bUseStringQueCog  ' See initIfNotAlready() for starting value
-
-DAT
-
-taskStack           LONG    0[STACK_SIZE_LONGS]
-endStackMark        LONG    stack_util.DO_NOT_WRITE_MARK
 
 OBJ
 
+{  ' *-COG-OFFLOADER-*  uncomment when enabling string que offloader COG
+
     strQ        : "isp_string_queue"        ' string queue object
     stack_util  : "isp_stack_check"         ' stack check utility (singleton)
+'}
+
+DAT
+
+{  ' *-COG-OFFLOADER-*  uncomment when enabling string que offloader COG
+
+taskStack           LONG    0[STACK_SIZE_LONGS]
+endStackMark        LONG    stack_util.DO_NOT_WRITE_MARK
+'}
 
 PUB null()
 '' This is not a top-level object
@@ -179,8 +184,12 @@ PUB addPort(rxp, txp, mode, baudrate, txPullup) : portHandle | baudcfg, spmode, 
 ''                 ( remember 8-bit char is 10 bits [start bit + 8bits data + stop bit] )
 '' -- txPullup.... use one of: PU_NONE, PU_1K5, PU_3K3, or PU_15K
 
+
+{  ' *-COG-OFFLOADER-*  uncomment when enabling string que offloader COG
+
     ' prepare for runtime stack checking
     stack_util.prepStackForCheck(@taskStack, STACK_SIZE_LONGS) ' for our internal test use
+'}
 
     initIfNotAlready()  ' ensure our object one-time init is completed
 
@@ -286,28 +295,28 @@ PUB start() : ok
         debug("SP8: ERROR: not starting, no ports specified! (missing call to addPort()")
         abort
 
+{  ' *-COG-OFFLOADER-*  uncomment when enabling string que offloader COG
+
     ' init our string queue mechanism
     strQ.start()
-
+'}
     stop()
 
-    if bUseStringQueCog
+{  ' *-COG-OFFLOADER-*  uncomment when enabling string que offloader COG
+
+    if bUseStringQueCog         ' enable this (set to TRUE) in initIfNotAlready()
         debug("---------------")
         debug("SP8: start string dequeue Cog")
         waitms(10)  ' delay for debug out (finish debug output before cog starts)
 
         ok := deQcog := COGSPIN(newcog, taskUnloadStringToQ(), @taskStack) + 1
-    else
-        ok := TRUE      ' allow transceiver COG start when not using queue
+'}
 
-    if(ok)
-        debug("---------------")
-        debug("SP8: start serial tranceiver Cog")
-        waitms(10)  ' delay for debug out (finish debug output before cog starts)
+    debug("---------------")
+    debug("SP8: start serial tranceiver Cog")
+    waitms(10)  ' delay for debug out (finish debug output before cog starts)
 
-        ok := xcvr8cog := coginit(COGEXEC_NEW, @uart_8_port, @activPortCount) + 1         ' start uart manager xcvr8cog
-    else
-        debug("SP8: ERROR one or more COGs didn't start")
+    ok := xcvr8cog := coginit(COGEXEC_NEW, @uart_8_port, @activPortCount) + 1         ' start uart manager xcvr8cog
 
 PUB stop()
 '' Stop the backend 8-port transceiver cog and serial dequeue cog
@@ -460,14 +469,10 @@ VAR
 
     BYTE tempString[STRING_SIZE + 1]
 
-PUB getRxString(pUserBuf, nBufLen) : pNextString
-'' Return next string from receive QUEUE (or 0 if empty)
-    pNextString := 0
-    stack_util.checkStack(@taskStack, STACK_SIZE_LONGS)
-    if strQ.stringsCount() > 0
-        pNextString := strQ.popStr(pUserBuf, nBufLen, FALSE)
-
 PRI taskUnloadStringToQ() | portHandle, pNextString
+
+{  ' *-COG-OFFLOADER-*  uncomment when enabling string que offloader COG
+
     debug("TskU: Started")
 
     repeat
@@ -476,6 +481,15 @@ PRI taskUnloadStringToQ() | portHandle, pNextString
         if portHandle <> PORT_NOT_FOUND
             strQ.pushStr(@tempString)
 
+PUB getRxString(pUserBuf, nBufLen) : pNextString
+'' Return next string from receive QUEUE (or 0 if empty)
+    pNextString := 0
+    stack_util.checkStack(@taskStack, STACK_SIZE_LONGS)
+    if strQ.stringsCount() > 0
+        pNextString := strQ.popStr(pUserBuf, nBufLen, FALSE)
+
+
+'}
 
 PUB nextRxString(pUserBuf, nBufLen) : portHandle, pNextString | bStringComplete, nChar, nPortHandle, bDidGetChars, pString, bytesRx, tmpStr
 '' Return pointer {pNextString} to avail string with {portHandle} of port it came from

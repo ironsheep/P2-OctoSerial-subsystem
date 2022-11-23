@@ -7,11 +7,15 @@ A Parallax Propeller v2 Object for maintaining 2-8 simultaneous serial ports usi
 
 ## 8 Serial Ports using a single COG
 
+A single COG services from 1 to 8 Tx/Rx pairs of pins.  The pins are configured as smart-pins which means that the driver feeds bytes to transmit pins when needed and get bytes from receive pins when bytes are available. This backend driver is written in pasm2. The interface routines are written in spin2.
+
+A method is supplied that interprets newlines (0x0A) as line ends. (This allows the driver to work with LF or CRLF terminated lines.). This method when called frequently enough unloads the back-end circular buffers into string buffers, one for each active port. When a string has completely arrive it returns the complete strings.
+
 ## Table of Contents
 
 On this Page:
 
-- [Driver Features](#features)
+- [Driver Features](#driver-features)
 - [How to contribute](#how-to-contribute)
 
 Additional pages:
@@ -20,9 +24,7 @@ Additional pages:
 
 ### Driver Features
 
-A single COG services from 1 to 8 Tx/Rx pairs of pins.  The pins are configured as smart-pins which means that the driver feeds bytes to transmit pins when needed and get bytes from receive pins when bytes are available. This backend driver is written in pasm2. The interface routines are written in spin2.
-
-A method is supplied that interprets newlines (0x0A) as line ends. (This allows the driver to work with LF or CRLF terminated lines.). This method when called frequently enough unloads the back-end circular buffers into string buffers, one for each active port. When a string has completely arrive it returns the complete strings.
+... *coming soon* ...
 
 ### Current status
 
@@ -35,14 +37,13 @@ Latest Changes:
 - Validated with serial decoding logic analyzer
 - Tested Raspberry Pi <-> P2
 - Tested P2 <-> P2
-
 ```
 
 ### Known Issues
 
 We have more plans in the works:
 
-- Find and document at this repo the highest speeds the driver can do against various devices without data loss
+- Characterize: Find and document at this repo the highest speeds the driver can do against various devices without data loss
 - Add more discrete port control if users find a need (e.g., 2-stop bits, etc.)
 
 ## How to Contribute
