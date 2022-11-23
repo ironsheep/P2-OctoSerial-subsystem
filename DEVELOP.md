@@ -11,21 +11,21 @@ On this Page:
 
 *Follow these steps to add 2-8 port serial P2 driver to your project:*
 
-- [Download the latest release .zip file]( #download-the-latest-release-demo-archive-setzip-file) - get project files
-- [Include project object(s) in your top-object-file]( #include-project-objects-in-your-top-object-file) - adjust your top-level file
-- [Add your own serial code]( #and-youre-off--add-your-own-motor-control-code) 
+- [Download the latest release .zip file](#download-the-latest-release-file) - get project files
+- [Include project object(s) in your top-object-file](#include-project-object-in-your-top-object-file) - adjust your top-level file
+- [Add your own serial code](#and-youre-off--add-your-own-serial-sendreceive-code) 
 
 Additional pages:
 
-- [Main Page](https://github.com/ironsheep/P2-Click-eInk) - Return to the top of this repo
+- [Main Page](https://github.com/ironsheep/P2-OctoSerial-subsystem) - Return to the top of this repo
 
 ---
 
 ## Download the latest release file
 
-Go to the project [Releases page](https://github.com/ironsheep/P2-OctoSerial-subsystem/releases) expand the **Assets** heading to see the demo-archive-set.zip file link. Click on it to download the .zip file. Unpack it and then select one or more file(s) to move  into your project. 
+Go to the project [Releases page](https://github.com/ironsheep/P2-OctoSerial-subsystem/releases) expand the **Assets** heading to see the **OctoMimumFiles.zip** file link. Click on it to download the .zip file. Unzip it and then move the three **.spin2** files into your project. 
 
-Lastly you'll include the objects, define the ports you want to use, start the object and then add your serial port send/receive code.
+Lastly you'll include the objects, define the ports you want to use, start the driver and then add your serial port send/receive code.
 
 
 ## Include Project Object in your top-object-file
@@ -147,13 +147,25 @@ Have Fun!
 
 There are files for both the P2 and files for a test Raspberry Pi in this repository.
 
+Two directories contain files:
+
+- The `P2-source/` directory contains the following files for the P2:
+
 | Filename | Description |
 | --- | --- |
+| demo_octoSystem.spin2 | A demonstration file I use for testing w/RPi<->P2 and P2<->P2
+| isp\_mem_strings.spin2 | An in-memory string formatter so you can build strings to send using printf() like code
+| isp\_octoport_serial.spin2 | The 2-8 Port Serial Driver file (*this is configured to work standalone!*)
+| isp\_string_queue.spin2 | A String Queue mechanism
+| jm_nstrings.spin2 | Underlying support used internally by `isp_mem_strings.spin2`
 
+- and the `RPi-source/` directory contains 
 
-
-
-
+| Filename | Description |
+| --- | --- |
+| p2-octo-serial-test.py | A test file I used to ack messages sent by the P2, it manages two separate serial ports and must be run on an RPi 4 so there are two serial ports.
+| config.ini | This test file was copied from another project. I butched it but left in the config.ini reader in case i need it later. The file is here and must be when python script is run but provides no useful info to the script. (all content is currently parsed but ignored)
+| requirements.txt | This is the requirements needed my python for the script to run. you know what to do with this if you've played with our P2 IoT Gateway project.
 ---
 
 > If you like my work and/or this has helped you in some way then feel free to help me out for a couple of :coffee:'s or :pizza: slices!
