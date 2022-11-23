@@ -41,6 +41,9 @@ OBJ
         serQue    : "isp_string_queue"                  ' Rx Message Que
         strFmt    : "isp_mem_strings"                  ' in-memory formatted strings
 
+CON
+   MSG_ACKED = TRUE
+   MSG_RAW = FALSE
 VAR
 
   LONG  portHndl[MAX_PORTS]                                             ' named ports for testing
@@ -90,18 +93,18 @@ PUB main()| testPort, portHandle, pNextString, bDidPass
         portHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
         if portHandle <> -1
             debug("* Rx [", zstr_(pNextString), "](", udec_(strsize(pNextString)), ")")
-            'validateRxString(portHandle, pNextString)
+            'validateStringFrom(portHandle, pNextString)
 
 
 
     repeat  ' HALT HERE for anly
 '}
 
-    repeat 3
-{
+    repeat 4
+'{
     ' no RX queue, RPi <-> P2
-        testPortPair_P2_RPi(portHndl[0])
         testPortPair_P2_RPi(portHndl[1])
+        testPortPair_P2_RPi(portHndl[0])
 
         waitms(10)
 
@@ -110,12 +113,12 @@ PUB main()| testPort, portHandle, pNextString, bDidPass
 {
     ' with RX queue
         if serPorts.txComplete(port2Hndl)
-            sendIncreTestMessage(port2Hndl)
+            sendIncreTestMsgFrom(port2Hndl)
 
             repeat
                 pNextString := serPorts.getRxString(@rxBuffer, CHAR_BUFFER_SIZE)
             until pNextString <> 0
-            validateRxString(portHandle, pNextString)
+            validateStringFrom(portHandle, pNextString)
 
             if serPorts.isRxOverflow(port2Hndl)
                 serPorts.rxFlush(port2Hndl)
@@ -125,7 +128,7 @@ PUB main()| testPort, portHandle, pNextString, bDidPass
 
     repeat    ' hold here forever....
 '}
-'{
+{
     ' no RX queue, P2 <-> P2
         testPortPair_P2_P2(portHndl[2], portHndl[3])
         testPortPair_P2_P2(portHndl[4], portHndl[5])
@@ -138,88 +141,93 @@ PUB main()| testPort, portHandle, pNextString, bDidPass
 
     repeat    ' hold here forever....
 
-PRI testPortPair_P2_P2(portHandleOrigin, portHandleTarget) | pNextString, bDidPass, strHandle
+PRI testPortPair_P2_P2(handleSender, handleReceiver) | pNextString, bDidPass, fromHandle
     ' if XMTR empty...
-    if serPorts.txComplete(portHandleOrigin)
-        ' generate, send numberd message
-        sendIncreTestMessage(portHandleOrigin)
-
+    if serPorts.txComplete(handleSender)
+        ' generate & send numbered test message
+        sendIncreTestMsgFrom(handleSender)
+        ' wait for reply
         repeat
-            strHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
-        until strHandle == portHandleTarget
-        bDidPass := validateSentString(portHandleOrigin, portHandleTarget, pNextString)
-
+            fromHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
+        until fromHandle == handleReceiver
+        bDidPass := validateSentString(handleSender, handleReceiver, pNextString)
+        ' if BAD reply then flush receiver so we are ready for next
         if not bDidPass
-            debug("* error DEST FLUSHed receiver, continuing...")
-            serPorts.rxFlush(portHandleTarget)
+            debug("* error RCV-END FLUSHed receiver, continuing...")
+            serPorts.rxFlush(handleReceiver)
+        ' if receiver OVERFLOW clear it
+        if serPorts.isRxOverflow(handleReceiver)
+            serPorts.rxFlush(handleReceiver)
+            serPorts.clearRxOverflow(handleReceiver)
+            debug("* cleared RCV-END OVERFLOW, continuing...")
 
-        if serPorts.isRxOverflow(portHandleTarget)
-            serPorts.rxFlush(portHandleTarget)
-            serPorts.clearRxOverflow(portHandleTarget)
-            debug("* cleared DEST OVERFLOW, continuing...")
-
-        ' gererate ACK form of string
-        getMessageForCount(@valBuffer, portHandleOrigin, msgCount[portHandleOrigin], TRUE)
-        replyWithAckMessage(portHandleTarget, @valBuffer)
-
+        ' gererate ACK form of test message
+        getMessageForCount(@valBuffer, handleSender, msgCount[handleSender], MSG_ACKED)
+        ' reply with numbered / ACKed test message
+        replyWithAckMsgFrom(handleReceiver, @valBuffer)
+        ' wait for reply
         repeat
-            strHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
-        until strHandle == portHandleOrigin
-        bDidPass := validateAckedString(portHandleTarget, portHandleOrigin, pNextString)
-
+            fromHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
+        until fromHandle == handleSender
+        bDidPass := validateAckedString(handleSender, handleSender, pNextString)
+        ' if BAD reply then flush receiver so we are ready for next
         if not bDidPass
-            debug("* error ORIGIN FLUSHed receiver, continuing...")
-            serPorts.rxFlush(portHandleOrigin)
+            debug("* error SND-END FLUSHed receiver, continuing...")
+            serPorts.rxFlush(handleSender)
+        ' if receiver OVERFLOW clear it
+        if serPorts.isRxOverflow(handleSender)
+            serPorts.rxFlush(handleSender)
+            serPorts.clearRxOverflow(handleSender)
+            debug("* cleared SND-END OVERFLOW, continuing...")
 
-        if serPorts.isRxOverflow(portHandleOrigin)
-            serPorts.rxFlush(portHandleOrigin)
-            serPorts.clearRxOverflow(portHandleOrigin)
-            debug("* cleared ORIGIN OVERFLOW, continuing...")
 
-
-PRI testPortPair_P2_RPi(portHandle) | pNextString, bDidPass, strHandle
+PRI testPortPair_P2_RPi(portHandle) | pNextString, bDidPass, fromHandle
+    ' if XMTR empty...
     if serPorts.txComplete(portHandle)
-        sendIncreTestMessage(portHandle)
-
+        ' generate & send numbered test message
+        sendIncreTestMsgFrom(portHandle)
+        ' wait for reply
         repeat
-            strHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
-        until strHandle == portHandle
+            fromHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
+        until fromHandle == portHandle
+        ' ensure reply is identical but with '---' replaced with 'ACK'
         bDidPass := validateAckedString(portHandle, portHandle, pNextString)
-
+        ' if BAD reply then flush receiver so we are ready for next
         if not bDidPass
             debug("* error FLUSHed receiver, continuing...")
             serPorts.rxFlush(portHandle)
-
+        ' if receiver OVERFLOW clear it
         if serPorts.isRxOverflow(portHandle)
             serPorts.rxFlush(portHandle)
             serPorts.clearRxOverflow(portHandle)
             debug("* cleared OVERFLOW, continuing...")
 
-PRI sendIncreTestMessage(portHandle) | lenNonCtrl
+
+PRI sendIncreTestMsgFrom(portHandle) | lenNonCtrl
     getMessageForCount(@txBuffer, portHandle, ++msgCount[portHandle], FALSE)
     serPorts.txStr(portHandle, @txBuffer)
     lenNonCtrl := lenExcludingCtrl(@txBuffer)
     debug("* TX p#", udec_(portHandle), " (", udec_(lenNonCtrl), "/", udec_(strsize(@txBuffer)), ")[", lstr_(@txBuffer, lenNonCtrl), "]")
 
-PRI replyWithAckMessage(portHandle, pMessage) | lenNonCtrl
+
+PRI replyWithAckMsgFrom(portHandle, pMessage) | lenNonCtrl
     serPorts.txStr(portHandle, pMessage)
     lenNonCtrl := lenExcludingCtrl(pMessage)
     debug("* TX p#", udec_(portHandle), " (", udec_(lenNonCtrl), "/", udec_(strsize(pMessage)), ")[", lstr_(pMessage, lenNonCtrl), "]")
 
-PRI validateSentString(portHandleSndr, portHandleRcvr, pString) : bFailStatus
-    bFailStatus := validateRxString(portHandleSndr, portHandleRcvr, pString, FALSE)
 
-PRI validateAckedString(portHandleSndr, portHandleRcvr, pString) : bFailStatus
-    bFailStatus := validateRxString(portHandleSndr, portHandleRcvr, pString, TRUE)
+PRI validateSentString(portHandleCounts, portHandleRcvr, pString) : bFailStatus
+    getMessageForCount(@valBuffer, portHandleCounts, msgCount[portHandleCounts], MSG_RAW)
+    bFailStatus := validateStringFrom(portHandleRcvr, pString, @valBuffer)
 
-PRI validateRxString(portHandleSndr, portHandleRcvr, pString, bIsAcked) : bFailStatus | lenNonCtrl, bDidPass, pResult, nCount
-    getMessageForCount(@valBuffer, portHandleSndr, msgCount[portHandleSndr], bIsAcked)
-    bFailStatus := bDidPass := (strcomp(pString, @valBuffer) == -1) ? TRUE : FALSE
-    'if not bDidPass
-    '    debug(" -- lt(", udec_(strsize(@valBuffer)), ") ", uhex_byte_array_(@valBuffer, strsize(@valBuffer)+1))
-    '    debug(" -- rt(", udec_(strsize(pString)), ") ", uhex_byte_array_(pString, strsize(pString)+1))
-    'if strsize(pString) <> strsize(@valBuffer)
-    '    bDidPass := FALSE
+
+PRI validateAckedString(portHandleCounts, portHandleRcvr, pString) : bFailStatus
+    getMessageForCount(@valBuffer, portHandleCounts, msgCount[portHandleCounts], MSG_ACKED)
+    bFailStatus := validateStringFrom(portHandleRcvr, pString, @valBuffer)
+
+
+PRI validateStringFrom(portHandleRcvr, pString, pDesiredString) : bFailStatus | lenNonCtrl, bDidPass, pResult, nCount
+    bFailStatus := bDidPass := (strcomp(pString, pDesiredString) == -1) ? TRUE : FALSE
     if bDidPass
         passCt[portHandleRcvr]++
     else
@@ -229,34 +237,19 @@ PRI validateRxString(portHandleSndr, portHandleRcvr, pString, bIsAcked) : bFailS
     lenNonCtrl := lenExcludingCtrl(pString)
     debug("* RX p#", udec_(portHandleRcvr), " (", udec_(lenNonCtrl), "/", udec_(strsize(pString)), ")[", lstr_(pString, lenNonCtrl), "]: ", zstr_(pResult), " seq#", udec_(nCount))
 
+
 PRI getMessageForCount(pBuffer, portHandle, nCount, bWithAck)
     if bWithAck
         strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d ACK\r\n"), portHandle + 1, nCount)
     else
         strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d ---\r\n"), portHandle + 1, nCount)
 
+
 PRI lenExcludingCtrl(pStr) : nLen
     ' reduce strsize to len not-including CRLF
-    'debug("str=(", udec_(strsize(pStr)+1), ")[", uhex_byte_array_(pStr, strsize(pStr)+1), "]")
     repeat nLen from 0 to strsize(pStr)
         if BYTE[pStr][nLen] == $0d or BYTE[pStr][nLen] == $0a
             quit
-    'debug(" - trimmed=(", udec(nLen), ")")
-
-PUB rxtest() | n
-' test recieve
-  n := serPorts.rx(0)
-
-PUB txtest() | i, s
-  ' test transmit
-  i := 1
-  repeat
-    serPorts.tx(portHndl[0], i)                                               ' output port 0
-    serPorts.tx(1, i+10)                                                 ' output port 1
-'    tx(port2Hndl, i+15)                                           ' output port 1
-    i++
-    if i == 100
-      i := 1
 
 {{
 

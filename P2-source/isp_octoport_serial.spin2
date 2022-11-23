@@ -88,7 +88,7 @@ CON { driver constants }
 
     ' serial specific constants
     '   WARNING: BUF_SIZE must fit into immediate value of PASM instruction. Therefore: BUF_SIZE = [0-511]!
-    BUF_SIZE       = 64                                           ' size of rx and tx buffers
+    BUF_SIZE       = 32                                           ' size of rx and tx buffers
     MAX_PORTS       = 8                                            ' set to number of ports to be used (0-8)
     MAX_LONG_TABLES = 9                                            ' set to number of LONG arrays to be passed to driver
     STRING_SIZE     = 64                                           ' size of temp string buffer
@@ -130,19 +130,18 @@ VAR
     LONG  pRxOverflow[MAX_PORTS]                                        ' cog ptr to txTailIdx[] hub address start
     ' \----------------------------------------------
 
-    LONG  portbaud[MAX_PORTS]
 
     LONG  rxHeadIdx[MAX_PORTS]                                     ' rx/txQHead/tail array of indexes
     LONG  rxTailIdx[MAX_PORTS]                                     '
     LONG  txHeadIdx[MAX_PORTS]                                     '
     LONG  txTailIdx[MAX_PORTS]                                     '
-    LONG  txDelay[MAX_PORTS]                                       ' port baud rate
+
     LONG  bRxOverflow[MAX_PORTS]                                       ' port baud rate
+    LONG  portbaud[MAX_PORTS]
+    LONG  txDelay[MAX_PORTS]                                       ' port baud rate
 
     BYTE  rxbuf[BUF_SIZE * MAX_PORTS]                              ' buffers - set MAX_PORTS to actual open ports
     BYTE  txbuf[BUF_SIZE * MAX_PORTS]
-
-    BYTE  pbuf[80]                                                ' padded strings
 
     LONG  bHaveStr[MAX_PORTS]
     LONG  strBuffIdx[MAX_PORTS]
@@ -183,7 +182,7 @@ PUB addPort(rxp, txp, mode, baudrate, txPullup) : portHandle | baudcfg, spmode, 
     ' prepare for runtime stack checking
     stack_util.prepStackForCheck(@taskStack, STACK_SIZE_LONGS) ' for our internal test use
 
-    initIfNotAlready()  ' ensure our one-time init is completed
+    initIfNotAlready()  ' ensure our object one-time init is completed
 
     portHandle := PORT_NOT_FOUND
     if (rxp == txp)                                            ' pins must be unique
@@ -221,14 +220,12 @@ PUB addPort(rxp, txp, mode, baudrate, txPullup) : portHandle | baudcfg, spmode, 
     else
         portHandle := activPortCount++                      ' return port number (0-7)
 
-    ' save the requested baud rate
     portbaud[portHandle] := baudrate
 
     txDelay[portHandle] := clkfreq / (baudrate * 11)                      ' tix to transmit one BYTE
 
     baudcfg := muldiv64(clkfreq, $1_0000, baudrate) & $FFFFFC00        ' set bit timing
     baudcfg |= (8-1)                                               ' set bits (8)
-    'baudcfg := (8-1) + ((clkfreq / baudrate) << 16)
 
     pinRx[portHandle] := rxp                                     ' save rx pin
 
@@ -254,7 +251,7 @@ PUB addPort(rxp, txp, mode, baudrate, txPullup) : portHandle | baudcfg, spmode, 
             %11 : spmode |= P_INVERT_OUTPUT | P_LOW_FLOAT              ' requires external pull-down
         pinstart(pinTx[portHandle], spmode, baudcfg, 0)
 
-    ' load buffer pointers
+    ' load pointers to rx and tx buffers
     pRxBuf[portHandle] := @BYTE[@rxbuf][portHandle * BUF_SIZE]               ' ptr to hub buffer address
     pTxBuf[portHandle] := @BYTE[@txbuf][portHandle * BUF_SIZE]
 
@@ -264,44 +261,25 @@ PUB addPort(rxp, txp, mode, baudrate, txPullup) : portHandle | baudcfg, spmode, 
     pRxTail[portHandle] := @LONG[@rxTailIdx][portHandle]
     pTxTail[portHandle] := @LONG[@txTailIdx][portHandle]
 
-    ' mark tx and rx as empty
-    rxHeadIdx[portHandle] := txHeadIdx[portHandle] := 0
-    rxTailIdx[portHandle] := txTailIdx[portHandle] := 0
+    ' mark tx and rx as empty (head == tail : means EMPTY)
+    rxHeadIdx[portHandle] := rxTailIdx[portHandle] := 0
+    txHeadIdx[portHandle] := txTailIdx[portHandle] := 0
 
     ' start with NO error indication
     bRxOverflow[portHandle] := FALSE
+    ' load pointer to OVERFLOW bool
     pRxOverflow[portHandle] := @LONG[@bRxOverflow][portHandle]
 
     ' init string receiver control data
     bHaveStr[portHandle] := FALSE
     strBuffIdx[portHandle] := 0
 
-{
-  debug("---------------")
-  debug(uhex(portHandle))
-  debug(uhex(pinRx[portHandle]))
-  debug(uhex(pinTx[portHandle]))
-  debug(uhex(pRxBuf[portHandle]))
-  debug(uhex(pTxBuf[portHandle]))
-  debug(uhex(pRxHead[portHandle]))
-  debug(uhex(pTxHead[portHandle]))
-  debug(uhex(pRxTail[portHandle]))
-  debug(uhex(pTxTail[portHandle]))
-
-  debug(uhex(rxHeadIdx[portHandle]))
-  debug(uhex(txHeadIdx[portHandle]))
-  debug(uhex(rxTailIdx[portHandle]))
-  debug(uhex(txTailIdx[portHandle]))
-
-  debug(uhex(bRxOverflow[portHandle]))
-  debug(uhex(pRxOverflow[portHandle]))
-  '}
     debug("SP8: ", udec(rxp), udec(txp), udec(baudrate), udec(portHandle))
 
 
 PUB start() : ok
-'' Start the backend 8-port transceiver
-    initIfNotAlready()  ' ensure our one-time init is completed
+'' Start the backend COG 8-port transceiver
+    initIfNotAlready()  ' ensure our object one-time init is completed
 
     ok := FALSE
     if activPortCount == 0
@@ -629,7 +607,7 @@ PRI rxCheckInternal(portHandle) : nChar
         nChar := BYTE[pRxBuf[portHandle]][rxHeadIdx[portHandle]]
 
 
-CON ' ----- 8-Port transceiver in Cog -----
+CON ' ----- 8-Port backend transceiver in Cog -----
 
 DAT { smart pin uart/buffer manager }
 '---+-----------+---------+---------------------+----+-----------+--------------+
