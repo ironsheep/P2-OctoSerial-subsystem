@@ -1,3 +1,16 @@
+'' =================================================================================================
+''
+''   File....... demo_octoSystem.spin2
+''   Purpose.... Demonstrate the new 8-port serial receiver routines
+''   Authors.... Stephen M Moraco
+''               -- Copyright (c) 2022 Iron Sheep Productions, LLC
+''               -- see below for terms of use
+''   E-mail..... stephen@ironsheep.biz
+''   Started.... Nov 2022
+''   Updated.... 22 Nov 2022
+''
+'' =================================================================================================
+
 CON { timing }
 
   CLK_FREQ = 300_000_000                                        ' system freq as a constant
@@ -30,45 +43,51 @@ OBJ
 
 VAR
 
-  byte  port1Hndl                                               ' named ports for testing
-  byte  port2Hndl
-  byte  port3Hndl
+  LONG  portHndl[MAX_PORTS]                                             ' named ports for testing
 
   byte  txBuffer[CHAR_BUFFER_SIZE+1]
   byte  rxBuffer[CHAR_BUFFER_SIZE+1]
+  byte  valBuffer[CHAR_BUFFER_SIZE+1]
+
   LONG  msgCount[MAX_PORTS]
+  LONG  passCt[MAX_PORTS]
+  LONG  failCt[MAX_PORTS]
 
+PUB main()| testPort, portHandle, pNextString, bDidPass
 
-PUB main()| testPort, portHandle, pNextString
-
-    longfill(@msgCount, 0, MAX_PORTS)    ' preload w/zero's
+    longfill(@msgCount, 0, MAX_PORTS * 3)    ' preload w/zero's
 
     ' testing setup only (rxp, txp, ....)
-    port1Hndl := serPorts.addport(16, 17, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 1st open port
-    port2Hndl := serPorts.addport(24, 25, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 2nd open port
-{
-    port3Hndl := serPorts.addport(21, 22, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
-    port3Hndl := serPorts.addport(25, 26, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
-    port3Hndl := serPorts.addport(27, 28, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
-    port3Hndl := serPorts.addport(29, 30, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
-    port3Hndl := serPorts.addport(31, 32, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
-    port3Hndl := serPorts.addport(33, 34, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_NONE)                       ' 2nd open port
-'}
-    debug("* Handles ", sdec(port1Hndl), sdec(port2Hndl))
+    portHndl[0] := serPorts.addPort(16, 17, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 1st open port
+    portHndl[1] := serPorts.addPort(24, 25, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 2nd open port
+
+    ' orange, yellow pair
+    portHndl[2] := serPorts.addPort(19, 18, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 3rd open port
+    portHndl[3] := serPorts.addPort(31, 30, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 4th open port
+
+    ' green, blue pair
+    portHndl[4] := serPorts.addPort(21, 20, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 5th open port
+    portHndl[5] := serPorts.addPort(29, 28, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 6th open port
+
+    ' red, brown pair
+    portHndl[6] := serPorts.addPort(23, 22, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 7th open port
+    portHndl[7] := serPorts.addPort(27, 26, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 9th open port
+'
+    debug("* Handles: ", sdec_long_array_(@portHndl, MAX_PORTS))
 
     serPorts.start()
 
 {
-    strFmt.sFormatStr1(@txBuffer, string("%d:$sb12\r\n"), port1Hndl + 1)
-    serPorts.str(port1Hndl, @txBuffer)
+    strFmt.sFormatStr1(@txBuffer, string("%d:$sb12\r\n"), portHndl[0] + 1)
+    serPorts.txStr(portHndl[0], @txBuffer)
 
     waitms(10)
 
     strFmt.sFormatStr1(@txBuffer, string("%d:$sb32\r\n"), port2Hndl + 1)
-    serPorts.str(port2Hndl, @txBuffer)
+    serPorts.txStr(port2Hndl, @txBuffer)
 
     repeat
-        portHandle, pNextString := serPorts.rxNextString(@rxBuffer, CHAR_BUFFER_SIZE)
+        portHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
         if portHandle <> -1
             debug("* Rx [", zstr_(pNextString), "](", udec_(strsize(pNextString)), ")")
             'validateRxString(portHandle, pNextString)
@@ -78,36 +97,151 @@ PUB main()| testPort, portHandle, pNextString
     repeat  ' HALT HERE for anly
 '}
 
-    repeat 20
-        if serPorts.txcomplete(port1Hndl)
-            sendIncreTestMessage(port1Hndl)
-
-            repeat
-                portHandle, pNextString := serPorts.rxNextString(@rxBuffer, CHAR_BUFFER_SIZE)
-            until portHandle == port1Hndl
-            validateRxString(portHandle, pNextString)
-
-        if serPorts.txcomplete(port2Hndl)
-            sendIncreTestMessage(port2Hndl)
-
-            repeat
-                portHandle, pNextString := serPorts.rxNextString(@rxBuffer, CHAR_BUFFER_SIZE)
-            until portHandle == port1Hndl
-            validateRxString(portHandle, pNextString)
+    repeat 3
+{
+    ' no RX queue, RPi <-> P2
+        testPortPair_P2_RPi(portHndl[0])
+        testPortPair_P2_RPi(portHndl[1])
 
         waitms(10)
 
-    repeat
-    ' if have rx string get it
-    ' else tx a string
+    repeat    ' hold here forever....
+'}
+{
+    ' with RX queue
+        if serPorts.txComplete(port2Hndl)
+            sendIncreTestMessage(port2Hndl)
 
-PRI sendIncreTestMessage(portHandle)
-    strFmt.sFormatStr2(@txBuffer, string("%d:Test Message #%4d ---\r\n"), portHandle + 1, ++msgCount[portHandle])
-    serPorts.str(portHandle, @txBuffer)
-    debug("* TX #", udec_(portHandle), " [", zstr_(@txBuffer), "]")
+            repeat
+                pNextString := serPorts.getRxString(@rxBuffer, CHAR_BUFFER_SIZE)
+            until pNextString <> 0
+            validateRxString(portHandle, pNextString)
 
-PRI validateRxString(portHandle, pString)
-    debug("* RX #", udec_(portHandle), " [", zstr_(pString), "]")
+            if serPorts.isRxOverflow(port2Hndl)
+                serPorts.rxFlush(port2Hndl)
+                serPorts.clearRxOverflow(port2Hndl)
+                debug("* cleared OVERFLOW, continuing...")
+        waitms(10)
+
+    repeat    ' hold here forever....
+'}
+'{
+    ' no RX queue, P2 <-> P2
+        testPortPair_P2_P2(portHndl[2], portHndl[3])
+        testPortPair_P2_P2(portHndl[4], portHndl[5])
+        testPortPair_P2_P2(portHndl[6], portHndl[7])
+
+        waitms(10)
+
+    repeat    ' hold here forever....
+'}
+
+    repeat    ' hold here forever....
+
+PRI testPortPair_P2_P2(portHandleOrigin, portHandleTarget) | pNextString, bDidPass, strHandle
+    ' if XMTR empty...
+    if serPorts.txComplete(portHandleOrigin)
+        ' generate, send numberd message
+        sendIncreTestMessage(portHandleOrigin)
+
+        repeat
+            strHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
+        until strHandle == portHandleTarget
+        bDidPass := validateSentString(portHandleOrigin, portHandleTarget, pNextString)
+
+        if not bDidPass
+            debug("* error DEST FLUSHed receiver, continuing...")
+            serPorts.rxFlush(portHandleTarget)
+
+        if serPorts.isRxOverflow(portHandleTarget)
+            serPorts.rxFlush(portHandleTarget)
+            serPorts.clearRxOverflow(portHandleTarget)
+            debug("* cleared DEST OVERFLOW, continuing...")
+
+        ' gererate ACK form of string
+        getMessageForCount(@valBuffer, portHandleOrigin, msgCount[portHandleOrigin], TRUE)
+        replyWithAckMessage(portHandleTarget, @valBuffer)
+
+        repeat
+            strHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
+        until strHandle == portHandleOrigin
+        bDidPass := validateAckedString(portHandleTarget, portHandleOrigin, pNextString)
+
+        if not bDidPass
+            debug("* error ORIGIN FLUSHed receiver, continuing...")
+            serPorts.rxFlush(portHandleOrigin)
+
+        if serPorts.isRxOverflow(portHandleOrigin)
+            serPorts.rxFlush(portHandleOrigin)
+            serPorts.clearRxOverflow(portHandleOrigin)
+            debug("* cleared ORIGIN OVERFLOW, continuing...")
+
+
+PRI testPortPair_P2_RPi(portHandle) | pNextString, bDidPass, strHandle
+    if serPorts.txComplete(portHandle)
+        sendIncreTestMessage(portHandle)
+
+        repeat
+            strHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
+        until strHandle == portHandle
+        bDidPass := validateAckedString(portHandle, portHandle, pNextString)
+
+        if not bDidPass
+            debug("* error FLUSHed receiver, continuing...")
+            serPorts.rxFlush(portHandle)
+
+        if serPorts.isRxOverflow(portHandle)
+            serPorts.rxFlush(portHandle)
+            serPorts.clearRxOverflow(portHandle)
+            debug("* cleared OVERFLOW, continuing...")
+
+PRI sendIncreTestMessage(portHandle) | lenNonCtrl
+    getMessageForCount(@txBuffer, portHandle, ++msgCount[portHandle], FALSE)
+    serPorts.txStr(portHandle, @txBuffer)
+    lenNonCtrl := lenExcludingCtrl(@txBuffer)
+    debug("* TX p#", udec_(portHandle), " (", udec_(lenNonCtrl), "/", udec_(strsize(@txBuffer)), ")[", lstr_(@txBuffer, lenNonCtrl), "]")
+
+PRI replyWithAckMessage(portHandle, pMessage) | lenNonCtrl
+    serPorts.txStr(portHandle, pMessage)
+    lenNonCtrl := lenExcludingCtrl(pMessage)
+    debug("* TX p#", udec_(portHandle), " (", udec_(lenNonCtrl), "/", udec_(strsize(pMessage)), ")[", lstr_(pMessage, lenNonCtrl), "]")
+
+PRI validateSentString(portHandleSndr, portHandleRcvr, pString) : bFailStatus
+    bFailStatus := validateRxString(portHandleSndr, portHandleRcvr, pString, FALSE)
+
+PRI validateAckedString(portHandleSndr, portHandleRcvr, pString) : bFailStatus
+    bFailStatus := validateRxString(portHandleSndr, portHandleRcvr, pString, TRUE)
+
+PRI validateRxString(portHandleSndr, portHandleRcvr, pString, bIsAcked) : bFailStatus | lenNonCtrl, bDidPass, pResult, nCount
+    getMessageForCount(@valBuffer, portHandleSndr, msgCount[portHandleSndr], bIsAcked)
+    bFailStatus := bDidPass := (strcomp(pString, @valBuffer) == -1) ? TRUE : FALSE
+    'if not bDidPass
+    '    debug(" -- lt(", udec_(strsize(@valBuffer)), ") ", uhex_byte_array_(@valBuffer, strsize(@valBuffer)+1))
+    '    debug(" -- rt(", udec_(strsize(pString)), ") ", uhex_byte_array_(pString, strsize(pString)+1))
+    'if strsize(pString) <> strsize(@valBuffer)
+    '    bDidPass := FALSE
+    if bDidPass
+        passCt[portHandleRcvr]++
+    else
+        failCt[portHandleRcvr]++
+    pResult := (bDidPass) ? @"    " : @"FAIL"
+    nCount := (bDidPass) ? passCt[portHandleRcvr] : failCt[portHandleRcvr]
+    lenNonCtrl := lenExcludingCtrl(pString)
+    debug("* RX p#", udec_(portHandleRcvr), " (", udec_(lenNonCtrl), "/", udec_(strsize(pString)), ")[", lstr_(pString, lenNonCtrl), "]: ", zstr_(pResult), " seq#", udec_(nCount))
+
+PRI getMessageForCount(pBuffer, portHandle, nCount, bWithAck)
+    if bWithAck
+        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d ACK\r\n"), portHandle + 1, nCount)
+    else
+        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d ---\r\n"), portHandle + 1, nCount)
+
+PRI lenExcludingCtrl(pStr) : nLen
+    ' reduce strsize to len not-including CRLF
+    'debug("str=(", udec_(strsize(pStr)+1), ")[", uhex_byte_array_(pStr, strsize(pStr)+1), "]")
+    repeat nLen from 0 to strsize(pStr)
+        if BYTE[pStr][nLen] == $0d or BYTE[pStr][nLen] == $0a
+            quit
+    'debug(" - trimmed=(", udec(nLen), ")")
 
 PUB rxtest() | n
 ' test recieve
@@ -117,9 +251,36 @@ PUB txtest() | i, s
   ' test transmit
   i := 1
   repeat
-    serPorts.tx(port1Hndl, i)                                               ' output port 0
+    serPorts.tx(portHndl[0], i)                                               ' output port 0
     serPorts.tx(1, i+10)                                                 ' output port 1
 '    tx(port2Hndl, i+15)                                           ' output port 1
     i++
     if i == 100
       i := 1
+
+{{
+
+ -------------------------------------------------------------------------------------------------
+  MIT License
+
+  Copyright (c) 2022 Iron Sheep Productions, LLC
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+ =================================================================================================
+}}

@@ -3,6 +3,8 @@
 ''   File....... isp_mem_strings.spin2
 ''   Purpose.... provide sprintf() c-like functions for Spin2 developers
 ''   Authors.... Stephen M. Moraco
+''               -- Copyright (c) 2022 Iron Sheep Productions, LLC
+''               -- see below for terms of use
 ''                (Highly leveraged from jm_serial.spin2 by Jon McPhalen)
 ''   E-mail..... stephen@ironsheep.biz
 ''   Started.... Feb 2022

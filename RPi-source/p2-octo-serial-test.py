@@ -2475,14 +2475,14 @@ def p2ReportFileChanged(fSpec):
 #  TASK: dedicated Linux Command interface serial listener
 # -----------------------------------------------------------------------------
 
-def taskSerialCmdListener(thrdSerPort, thrdStringQueue):
-    print_line('Thread: taskSerialCmdListener({}) started'.format(thrdSerPort.name), verbose=True)
+def taskSerialCmdListener(threadSerPort, threadStringQueue):
+    print_line('Thread: taskSerialCmdListener({}) started'.format(threadSerPort.name), verbose=True)
     # process lies from serial or from test file
     lineSoFar = ''
     while True:
         # Check if incoming bytes are waiting to be read from the serial input  buffer.
-        if thrdSerPort.inWaiting() > 0:
-            received_data = thrdSerPort.readline()              # data here, read serial port
+        if threadSerPort.inWaiting() > 0:
+            received_data = threadSerPort.readline()              # data here, read serial port
             dataLen = len(received_data)
             if dataLen > 0 and dataLen < 512:
                 #print_line("cmd-poll() : data({})[{}]".format(dataLen, binascii.hexlify(received_data)), error=True)
@@ -2492,8 +2492,8 @@ def taskSerialCmdListener(thrdSerPort, thrdStringQueue):
                     #print_line('TASK-cmdRX lineSoFar({})=({})'.format(len(lineSoFar),lineSoFar), debug=True)
                     if '\n' in lineSoFar:
                         newLine = lineSoFar.rstrip('\r\n')
-                        print_line('TASK-cmdRX rxD({})=({})'.format(len(newLine),newLine), debug=True)
-                        thrdStringQueue.pushLine(newLine)
+                        print_line('TASK-push rxD({})=({})'.format(len(newLine),newLine), debug=True)
+                        threadStringQueue.pushLine(newLine)
                         lineSoFar = ''
                 else:
                     print_line('TASK-cmdRX non-ASCII rxD({})=[{}]'.format(len(received_data), received_data), warning=True)
@@ -2959,21 +2959,28 @@ _thread.start_new_thread(taskSerialCmdListener, ( serialPortCmd, cmdInputQueue, 
 sleep(1)    # allow threads to start...
 
 def ackResponse(serPort, textStr):
-    responseStr = '{}\r\n'.format(textStr.replace('---', 'ACK'))
+    print_line('- - -- line({})=[{}]'.format(len(textStr), textStr), debug=True)
+    ackedStr = textStr.replace('---', 'ACK')
+    #ackedStr = textStr.replace('\x00','').replace('---', 'ACK')
+    responseStr = '{}\r\n'.format(ackedStr)
     newOutLine = responseStr.encode('utf-8')
-    print_line('-resp- line({})=({})'.format(len(newOutLine), newOutLine), verbose=True)
+    print_line('-resp- line({})=[{}]'.format(len(newOutLine), newOutLine), verbose=True)
     serPort.write(newOutLine)
 
 def mainLoop():
-    while True:             # Event Loop
+    while True:             # Event Loop, forever...
         bFoundOne = False
         rxLineA = p2InputQueue.popLine()
-        if len(rxLineA) > 0 and '---' in rxLineA:
+        if len(rxLineA) > 0:
+            print_line(' -POP- line({})=[{}]'.format(len(rxLineA), rxLineA), debug=True)
+        if len(rxLineA) > 0:
             ackResponse(serialPortP2, rxLineA)
             bFoundOne = True
 
         rxLineB = cmdInputQueue.popLine()
-        if len(rxLineB) > 0 and '---' in rxLineB:
+        if len(rxLineB) > 0:
+            print_line(' -POP- line({})=[{}]'.format(len(rxLineB), rxLineB), debug=True)
+        if len(rxLineB) > 0:
             ackResponse(serialPortCmd, rxLineB)
             bFoundOne = True
 
