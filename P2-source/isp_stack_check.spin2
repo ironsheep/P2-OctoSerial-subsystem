@@ -1,0 +1,132 @@
+'' =================================================================================================
+''
+''   File....... isp_stack_check.spin2
+''   Purpose.... Utility Object Providing Stack-overflow testing
+''
+''   Authors.... Stephen M. Moraco
+''               -- Copyright (c) 2022 Iron Sheep Productions, LLC
+''               -- see below for terms of use
+''   E-mail..... stephen@ironsheep.biz
+''   Started.... Sep 2022
+''   Updated.... 29 Sep 2022
+''
+'' =================================================================================================
+
+CON { ----- TEST Support ----- }
+
+  DO_NOT_WRITE_MARK = $addee5e5
+  NOT_WRITTEN_MARK = $a5a50df0
+
+  #0, TST_UNKNOWN, TST_PASS, TST_FAIL
+
+DAT
+    rsltPass        BYTE    "pass",0
+    rsltFail        BYTE    "FAIL",0
+
+    nStkChkUsed     LONG    0
+    nStkChkIdx      LONG    0
+    pEndStackMark   LONG    0
+    pResult         LONG    0
+
+PUB null()
+'' This is not a top level object
+
+PUB prepStackForCheck(pStack, nStackLongCt)
+'' Reset all failure indicators
+    pEndStackMark := @LONG[pStack][nStackLongCt]
+    longfill(pStack, NOT_WRITTEN_MARK, nStackLongCt)
+    LONG[pEndStackMark] := DO_NOT_WRITE_MARK
+
+PUB checkStack(pStack, nStackLongCt)
+'' Ensure didn't exceed stack size
+    pEndStackMark := @LONG[pStack][nStackLongCt]
+    if LONG[pEndStackMark] <> DO_NOT_WRITE_MARK
+        debug("^^^ STACK Overflow! Depth greater than ", udec(nStackLongCt),  " longs")
+        lockupForAnly()
+
+PUB reportStackUse(pStack, nStackLongCt)
+'' Write stack usage to debug()
+    nStkChkUsed := 0
+    repeat nStkChkIdx from 0 to nStackLongCt - 1
+        if LONG[pStack][nStkChkIdx] <> NOT_WRITTEN_MARK
+            nStkChkUsed++
+        else
+            quit    ' done we have our count
+    debug("^^^ STACK used ", udec(nStkChkUsed), " of ", udec(nStackLongCt))
+
+PUB testReport(pStack, nStackLongCt, pTestId, bPassFail)
+'' Write test pass/fail to debug()
+    pResult := (bPassFail == TST_PASS) ? @rsltPass : @rsltFail
+    debug("+++ ---------")
+    debug("+++ TEST [", zstr_(pTestId), "] - ", zstr_(pResult))
+    reportStackUse(pStack, nStackLongCt)
+    checkStack(pStack, nStackLongCt)
+    'dumpStack()
+
+    if bPassFail == TST_FAIL
+        lockupForAnly()
+
+PUB dumpStack(pStack, nStackLongCt)
+'' Dump stack memory
+    dbgMemDump(@"TASK Stack", pStack, (nStackLongCt + 1) * 4)
+
+PUB dbgMemDump(pMessage, pBytes, lenBytes) | rowCount, rowLen, pCurrByte, lastRowByteCount, bytesSoFar
+'' Dump rows of hex values with address preceeding
+
+    if pMessage
+        debug("** ", zstr_(pMessage), ":")
+
+    rowCount := lenBytes / 16
+    lastRowByteCount := lenBytes - (rowCount * 16)
+    pCurrByte := pBytes
+    bytesSoFar := 0
+
+    ' emit full lines
+    if rowCount > 0
+        repeat rowCount
+            dbgMemDumpRow(pCurrByte, 16)
+            pCurrByte += 16
+            bytesSoFar += 16
+
+    if  bytesSoFar < lenBytes
+        ' emit last line
+        dbgMemDumpRow(pCurrByte, lastRowByteCount)
+
+PRI dbgMemDumpRow(pBytes, lenBytes)
+' emit address followed by bytes
+    debug(" ", uhex_long_(pBytes), ": ", uhex_byte_array_(pBytes, lenBytes))
+
+PRI lockupForAnly()
+' tell that we are halting then halt (effictivly)
+    debug("---- FAIL - stopping here for Analysis of above ^^^")
+    repeat      ' hold here for now
+
+
+
+CON { license }
+{{
+
+ -------------------------------------------------------------------------------------------------
+  MIT License
+
+  Copyright (c) 2022 Iron Sheep Productions, LLC
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+ =================================================================================================
+}}

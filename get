@@ -10,6 +10,7 @@ demo_octoSystem.spin2
 isp_mem_strings.spin2
 isp_octoport_serial.spin2
 isp_string_queue.spin2
+isp_stack_check.spin2
 jm_nstrings.spin2
 _FILE_EOF_
 )
