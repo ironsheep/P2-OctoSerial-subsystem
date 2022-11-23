@@ -64,12 +64,15 @@ CON { serial io pins }
     SER2_RX = 20
     SER2_TX = 21
     
+    CHAR_BUFFER_SIZE = 80
+    
 VAR { port handles }
 
   LONG  hndlRpi
   LONG  hndlP1
   
-  BYTE txBuffer[32+1]
+  BYTE txBuffer[32 + 1]
+  BYTE rxBuffer[CHAR_BUFFER_SIZE + 1]
 
 PUB main() : ok | portHandle, pNextString
 '' DEMO 
@@ -91,6 +94,8 @@ PUB main() : ok | portHandle, pNextString
 
   ... and do your app stuff from here on ...
   
+    ' HERE's a tiny example:
+    
     ' create our string from variables
     strFmt.sFormatStr1(@txBuffer, string("%d:$sb12\r\n"), hndlRpi + 1)
     
