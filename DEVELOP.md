@@ -154,15 +154,25 @@ There are files for both the P2 and files for a test Raspberry Pi in this reposi
 
 Two directories contain files:
 
-- The `P2-source/` directory contains the following files for the P2:
+- The `P2-source/` directory contains the following files for the P2.
+
+**Core driver files:**
 
 | Filename | Description |
 | --- | --- |
-| demo_octoSystem.spin2 | A demonstration file I use for testing w/RPi<->P2 and P2<->P2
+| demo_octoSystem.spin2 | (**WELL THIS IS NOT REALLY A CORE FILE**)</br>A demonstration file I use for testing w/RPi<->P2 and P2<->P2
 | isp\_mem_strings.spin2 | An in-memory string formatter so you can build strings to send using printf() like code
 | isp\_octoport_serial.spin2 | The 2-8 Port Serial Driver file (*this is configured to work standalone!*)
-| isp\_string_queue.spin2 | A String Queue mechanism
 | jm_nstrings.spin2 | Underlying support used internally by `isp_mem_strings.spin2`
+
+**Additional files when using the Special Build form of the driver:**
+
+| Filename | Description |
+| --- | --- |
+| isp\_string_queue.spin2 | A String Queue mechanism
+| isp\_stack_check.spin2 | A stack check tool I used when running spin cogs
+
+**NOTE:** To convert the driver to have it's own separate cog for offloading incoming strings you hunt down all `*-COG-OFFLOADER-*` comment marks. Each of these lines start with a '{'. To enable this feature you comment the { by preceeding it with a "'" (spin2 comment character) this uncomments the code within the { ... } block. You have to find all of these (5 or more of them) in the file and uncomment each.  This effort changes start() to now start a 2nd cog which constantly runs to offload strings from the backend cog and store them in a special string queue. A new method `getRxString()` is then used to pop strings off of this new queue.  *I put this in as an experiment. If you find it useful let me know!*
 
 - and the `RPi-source/` directory contains 
 
