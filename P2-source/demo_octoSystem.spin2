@@ -100,7 +100,7 @@ PUB main()| testPort, portHandle, pNextString, bDidPass
     repeat  ' HALT HERE for anly
 '}
 
-    repeat 4
+    repeat 2
 '{
     ' no RX queue, RPi <-> P2
         testPortPair_P2_RPi(portHndl[1])
@@ -108,7 +108,6 @@ PUB main()| testPort, portHandle, pNextString, bDidPass
 
         waitms(10)
 
-    repeat    ' hold here forever....
 '}
 {
     ' with RX queue
@@ -128,7 +127,7 @@ PUB main()| testPort, portHandle, pNextString, bDidPass
 
     repeat    ' hold here forever....
 '}
-{
+'{
     ' no RX queue, P2 <-> P2
         testPortPair_P2_P2(portHndl[2], portHndl[3])
         testPortPair_P2_P2(portHndl[4], portHndl[5])

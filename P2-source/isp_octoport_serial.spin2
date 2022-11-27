@@ -633,9 +633,9 @@ uart_8_port
                 rdlong    rxpin, ptra                ' block-copy hub variables to cog
                 sub       portnum, #1                ' subtract 1 to get actual port number max value
 
-                drvl      pgrpPortNbr                ' LA INSTRU. clear port nbr LA pins
-                drvl      pinTskTx                   ' LA INSTRU. clear port nbr LA pins
-                drvl      pinTskRx                   ' LA INSTRU. clear port nbr LA pins
+'                drvl      pgrpPortNbr                ' LA INSTRU. clear port nbr LA pins
+'                drvl      pinTskTx                   ' LA INSTRU. clear port nbr LA pins
+'                drvl      pinTskRx                   ' LA INSTRU. clear port nbr LA pins
                 'debug("sc8: - ", udec_long(portnum))
                 'debug("sc8: - ", udec_long(rxpin))
                 'debug("sc8: - ", udec_long(txpin))
@@ -647,12 +647,14 @@ uart_main                                            ' loop through each port, g
 
                 '-------------------------------
 .loop                                                ' get offsets for array values
+{
                 ' write port number to LA pins
                 mov       bitsForLA, portctr         ' LA INSTRU.
                 SHL       bitsForLA, #8              ' LA INSTRU.
                 setq      laPortMask                 ' LA INSTRU.  set emit lower 3-bits
                 muxq      OUTA, bitsForLA            ' LA INSTRU.  write port # to LA bits 8-10
                 ' write complete
+'}
                 alts      portctr, #rxpin            ' add portctr p_rxhead_idx to rxpin - rxpin[portctr]
                 mov       rxd, 0-0                     ' copy rxpin to rxd
 
@@ -682,9 +684,9 @@ uart_main                                            ' loop through each port, g
                 '      save incremented tail
 
 rx_serial
-                outnot    pinTskRx                   ' LA INSTRU.
+'                outnot    pinTskRx                   ' LA INSTRU.
                 testp     rxd                   wc   ' Q: does smartpin have received byte? (CY=Have BYTE)
-    if_nc       outnot    pinTskRx                   ' LA INSTRU.
+'    if_nc       outnot    pinTskRx                   ' LA INSTRU.
     if_nc       ret                                  ' NO: return
 
                 rdpin     newChar, rxd               ' read new BYTE from smartpin ( allowing smart pin to rx next )
@@ -702,7 +704,7 @@ rx_serial
                 cmp       p_queue, queIdx       wz   ' Q: HeadIdx == TailIdx? (NOT have room for next char?)
     if_e        alts      portctr, #p_rxOvflw        ' YES, get ptr to Rx Overflow Error Boolean
     if_e        wrlong    trueBOOL, 0-0              ' YES, set bool to TRUE
-    if_e        outnot    pinTskRx                   ' LA INSTRU.
+'    if_e        outnot    pinTskRx                   ' LA INSTRU.
     if_e        ret                                  ' YES, queue is FULL, exit (w/error) without saving char
 
                 alts      portctr, #p_rxbuf          ' NO, get base address of Rx Queue
@@ -711,7 +713,7 @@ rx_serial
 
                 wrbyte    newChar, p_queue           ' write char to queue[tail]
                 wrlong    queIdx, p_rxtail_idx       ' write rxQTail index back to hub
-                outnot    pinTskRx                   ' LA INSTRU.
+'                outnot    pinTskRx                   ' LA INSTRU.
                 ret
 
                 '-------------------------------
@@ -723,10 +725,10 @@ rx_serial
                 '     incr head (mod que size)
                 '     deque char
 tx_serial
-                outnot    pinTskTx                    ' LA INSTRU.
+'                outnot    pinTskTx                    ' LA INSTRU.
 
                 rdpin     p_queue, txd           wc   ' Q: still transmitting last char?, (CY=not done)
-    if_c        outnot    pinTskTx                    ' LA INSTRU.
+'    if_c        outnot    pinTskTx                    ' LA INSTRU.
     if_c        ret                                  ' YES: abort (too early to send next)
 
                 alts      portctr, #p_txhead         ' Get txQHead index from hub
@@ -738,7 +740,7 @@ tx_serial
                 rdlong    p_queue, p_txtail_idx
 
                 cmp       p_queue, queIdx       wz   ' Q: HeadIdx == TailIdx?
-    if_e        outnot    pinTskTx                   ' LA INSTRU.
+'    if_e        outnot    pinTskTx                   ' LA INSTRU.
     if_e        ret                                  ' YES, queue is EMPTY, we're done
 
                 alts      portctr, #p_txbuf          ' get base address of Tx Queue
@@ -749,14 +751,14 @@ tx_serial
                 wypin     newChar, txd               ' tell tx pin to send this character
 
                 wrlong    queIdx, p_txhead_idx       ' write head index back to hub
-                outnot    pinTskTx                   ' LA INSTRU.
+'                outnot    pinTskTx                   ' LA INSTRU.
                 ret
                 '-------------------------------
 
-pgrpPortNbr     long      LA_BASE_PIN addpins 2
-pinTskTx        long      LA_TX_PIN addpins 0
-pinTskRx        long      LA_RX_PIN addpins 0
-laPortMask      long      %00000000_00000000_00000111_00000000   ' LA port # on pins 8-10 (OUTA)
+'pgrpPortNbr     long      LA_BASE_PIN addpins 2
+'pinTskTx        long      LA_TX_PIN addpins 0
+'pinTskRx        long      LA_RX_PIN addpins 0
+'laPortMask      long      %00000000_00000000_00000111_00000000   ' LA port # on pins 8-10 (OUTA)
 trueBOOL        LONG      TRUE
 
 
