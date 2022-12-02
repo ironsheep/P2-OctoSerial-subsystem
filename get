@@ -12,6 +12,8 @@ isp_octoport_serial.spin2
 isp_string_queue.spin2
 isp_stack_check.spin2
 jm_nstrings.spin2
+test_octoExercise_recv.spin2
+test_octoExercise_send.spin2
 _FILE_EOF_
 )
 

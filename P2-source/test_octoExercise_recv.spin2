@@ -1,0 +1,204 @@
+'' =================================================================================================
+''
+''   File....... test_octoExercise_recv.spin2
+''   Purpose.... exercise robustly the new 8-port serial transceiver routines
+''               this is the RECEIVE end of the exerciser
+''   Authors.... Stephen M Moraco
+''               -- Copyright (c) 2022 Iron Sheep Productions, LLC
+''               -- see below for terms of use
+''   E-mail..... stephen@ironsheep.biz
+''   Started.... Dec 2022
+''   Updated.... 1 Dec 2022
+''
+'' =================================================================================================
+
+CON { timing }
+
+  CLK_FREQ = 300_000_000                                        ' system freq as a constant
+'  MS_001   = CLK_FREQ / 1_000                                   ' ticks in 1ms
+'  US_001   = CLK_FREQ / 1_000_000                               ' ticks in 1us
+
+  BAUD_PST  = 115_200                                            ' terminal baud rate
+  BAUD_OCTO_PORTS  = 115_200                                    ' our serial ports baud rate
+
+  MAX_PORTS  = 8                                                ' max ports for testing
+
+  CHAR_BUFFER_SIZE  = 80                                    ' room for building tx strings
+
+  _clkfreq = CLK_FREQ                                           ' set system clock
+
+CON { fixed io pins }
+
+  RX1      = 63  { I }                                          ' programming / debug
+  TX1      = 62  { O }
+
+  SF_CS    = 61  { O }                                          ' serial flash
+  SF_SCK   = 60  { O }
+  SF_SDO   = 59  { O }
+  SF_SDI   = 58  { I }
+
+OBJ
+        serPorts  : "isp_octoport_serial"               ' 8-port driver
+        serQue    : "isp_string_queue"                  ' Rx Message Que
+        strFmt    : "isp_mem_strings"                  ' in-memory formatted strings
+
+CON
+
+#0, MSG_UNKNOWN, MSG_RAW, MSG_ACKD, MSG_NAKD
+
+VAR
+
+  LONG  portHndl[MAX_PORTS]                                             ' named ports for testing
+
+  byte  txBuffer[CHAR_BUFFER_SIZE+1]
+  byte  rxBuffer[CHAR_BUFFER_SIZE+1]
+  byte  valBuffer[CHAR_BUFFER_SIZE+1]
+
+  LONG  msgCount[MAX_PORTS]
+  LONG  passCt[MAX_PORTS]
+  LONG  failCt[MAX_PORTS]
+
+PUB main()| portHandle, pNextString, bDidPass, portIndex
+
+    longfill(@portHndl, serPorts.PORT_NOT_FOUND, MAX_PORTS)    ' empty handles
+    longfill(@msgCount, 0, MAX_PORTS * 3)    ' preload w/zero's
+
+    debug("* -----  RECEIVE end STARTED  ----- *")
+
+  ' testing P2 <-> P2 8 ports, 16 wires
+    ' Pair Blue/Green Long
+    portHndl[0] := serPorts.addPort(30, 31, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 1st open port
+
+{
+     ' Pair Yellow/Orange Long
+   portHndl[1] := serPorts.addPort(28, 29, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 2nd open port
+
+    ' Pair Red/Brown Long
+    portHndl[2] := serPorts.addPort(26, 27, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 3rd open port
+
+    ' Pair Purple/Gray Long
+    portHndl[3] := serPorts.addPort(24, 25, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 4th open port
+
+    ' Pair Orange/Yellow w/LA
+    portHndl[4] := serPorts.addPort(22, 23, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 5th open port
+
+    ' Pair Yellow/Green w/LA
+    portHndl[5] := serPorts.addPort(20, 21, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 6th open port
+
+    ' Pair Blue/Purple
+    portHndl[6] := serPorts.addPort(18, 19, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 7th open port
+
+    ' Pair Whaite/Gray
+    portHndl[7] := serPorts.addPort(16, 17, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 9th open port
+'}
+    debug("* Handles: ", sdec_long_array_(@portHndl, MAX_PORTS))
+
+    serPorts.start()
+
+    ' forever, wait for messages to arrive,
+    ' .  ack them and then return them
+    repeat
+        portHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
+        if portHandle <> serPorts.PORT_NOT_FOUND
+            portIndex := indexFromHandle(portHandle)
+            ' check message
+            bDidPass := validateSentString(portIndex, pNextString)                ' if good, mark as ack, reapply checksum
+            debug("Rx #", udec_(portIndex + 1), " msg=[", zstr(pNextString), "] cts [good=(", udec_(passCt[portIndex]), "), bad=(", udec_(failCt[portIndex]), ")]")
+            ' if good, mark as ACK, reapply checksum
+            if bDidPass
+                ' generate ACK form of test message
+                getMessageForCount(@valBuffer, portIndex, msgCount[portIndex], MSG_ACKD)
+            else
+            ' if bad, mark as NAK, reapply checksum
+                 getMessageForCount(@valBuffer, portIndex, msgCount[portIndex], MSG_NAKD)
+           ' return the message
+            serPorts.txStr(portHandle, @valBuffer)
+            debug("Tx #", udec_(portIndex + 1), " msg=[", zstr(@valBuffer), "]")
+
+    repeat    ' hold here forever....
+
+
+PRI indexFromHandle(portHandle) : nPortIndex | hndlIdx
+' convert a port handle to the index into the list of portHandles
+  repeat hndlIdx from 0 to MAX_PORTS - 1
+    if portHndl[hndlIdx] == portHandle
+        nPortIndex := hndlIdx
+        quit  ' we have our answer, outta here!
+
+
+PRI sendIncreTestMsgFrom(portHandle) | lenNonCtrl
+    getMessageForCount(@txBuffer, portHandle, ++msgCount[portHandle], FALSE)
+    serPorts.txStr(portHandle, @txBuffer)
+    lenNonCtrl := lenExcludingCtrl(@txBuffer)
+    debug("* TX p#", udec_(portHandle), " (", udec_(lenNonCtrl), "/", udec_(strsize(@txBuffer)), ")[", lstr_(@txBuffer, lenNonCtrl), "]")
+
+
+PRI replyWithAckMsgFrom(portHandle, pMessage) | lenNonCtrl
+    serPorts.txStr(portHandle, pMessage)
+    lenNonCtrl := lenExcludingCtrl(pMessage)
+    debug("* TX p#", udec_(portHandle), " (", udec_(lenNonCtrl), "/", udec_(strsize(pMessage)), ")[", lstr_(pMessage, lenNonCtrl), "]")
+
+
+PRI validateSentString(portIndex, pString) : bFailStatus
+    getMessageForCount(@valBuffer, portIndex, msgCount[portIndex], MSG_RAW)
+    bFailStatus := validateStringFrom(portIndex, pString, @valBuffer)
+
+
+PRI validateAckedString(portHandleCounts, portHandleRcvr, pString) : bFailStatus
+    getMessageForCount(@valBuffer, portHandleCounts, msgCount[portHandleCounts], MSG_ACKD)
+    bFailStatus := validateStringFrom(portHandleRcvr, pString, @valBuffer)
+
+
+PRI validateStringFrom(portIndex, pString, pDesiredString) : bFailStatus | lenNonCtrl, bDidPass, pResult, nCount
+    bFailStatus := bDidPass := (strcomp(pString, pDesiredString) == -1) ? TRUE : FALSE
+    if bDidPass
+        passCt[portIndex]++
+    else
+        failCt[portIndex]++
+    pResult := (bDidPass) ? @"    " : @"FAIL"
+    nCount := (bDidPass) ? passCt[portIndex] : failCt[portIndex]
+    lenNonCtrl := lenExcludingCtrl(pString)
+    debug("* RX p#", udec_(portIndex), " (", udec_(lenNonCtrl), "/", udec_(strsize(pString)), ")[", lstr_(pString, lenNonCtrl), "]: ", zstr_(pResult), " seq#", udec_(nCount))
+
+
+PRI getMessageForCount(pBuffer, portHandle, nCount, eMsgState)
+    if eMsgState == MSG_ACKD
+        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d ACK\r\n"), portHandle + 1, nCount)
+    elseif eMsgState == MSG_RAW
+        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d ---\r\n"), portHandle + 1, nCount)
+    elseif eMsgState == MSG_NAKD
+        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d NAK\r\n"), portHandle + 1, nCount)
+
+
+PRI lenExcludingCtrl(pStr) : nLen
+    ' reduce strsize to len not-including CRLF
+    repeat nLen from 0 to strsize(pStr)
+        if BYTE[pStr][nLen] == $0d or BYTE[pStr][nLen] == $0a
+            quit
+
+{{
+
+ -------------------------------------------------------------------------------------------------
+  MIT License
+
+  Copyright (c) 2022 Iron Sheep Productions, LLC
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+ =================================================================================================
+}}
