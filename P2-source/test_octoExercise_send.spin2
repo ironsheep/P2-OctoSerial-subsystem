@@ -21,10 +21,6 @@ CON { timing }
   BAUD_PST  = 115_200                                            ' terminal baud rate
   BAUD_OCTO_PORTS  = 115_200                                    ' our serial ports baud rate
 
-  MAX_PORTS  = 8                                                ' max ports for testing
-
-  CHAR_BUFFER_SIZE  = 80                                    ' room for building tx strings
-
   _clkfreq = CLK_FREQ                                           ' set system clock
 
 CON { fixed io pins }
@@ -41,36 +37,38 @@ OBJ
         serPorts  : "isp_octoport_serial_wLA"               ' 8-port driver
         serQue    : "isp_string_queue"                  ' Rx Message Que
         strFmt    : "isp_mem_strings"                  ' in-memory formatted strings
+        utils     : "test_utils"                  ' common routines for both ends of test mech
 
 CON
-#0, MSG_UNKNOWN, MSG_RAW, MSG_ACKD, MSG_NAKD
 
 #10, SST_UNKNOWN, SST_NEEDTX, SST_NEEDRX
+
 VAR
 
-  LONG  portHndl[MAX_PORTS]                                             ' named ports for testing
+  LONG  portHndl[utils.MAX_PORTS]                                             ' named ports for testing
 
-  byte  txBuffer[CHAR_BUFFER_SIZE+1]
-  byte  rxBuffer[CHAR_BUFFER_SIZE+1]
-  byte  valBuffer[CHAR_BUFFER_SIZE+1]
+  byte  txBuffer[utils.CHAR_BUFFER_SIZE + 1]
+  byte  rxBuffer[utils.CHAR_BUFFER_SIZE + 1]
+  byte  valBuffer[utils.CHAR_BUFFER_SIZE + 1]
 
-  LONG  txState[MAX_PORTS]  ' assign only SST_* values
-  LONG  msgCount[MAX_PORTS]
-  LONG  passCt[MAX_PORTS]
-  LONG  failCt[MAX_PORTS]
+  LONG  txState[utils.MAX_PORTS]  ' assign only SST_* values
+  LONG  msgTxCount[utils.MAX_PORTS]
+  LONG  msgRxCount[utils.MAX_PORTS]
+  LONG  passCt[utils.MAX_PORTS]
+  LONG  failCt[utils.MAX_PORTS]
 
-PUB main()| portIndex, portHandle, pNextString, bDidPass
+PUB main()| portIndex, portHandle, pNextString, bDidPass, bValidStatus, passIncr, failIncr
 
-    longfill(@txState, SST_NEEDTX, MAX_PORTS)    ' preset "need a tx message"
-    longfill(@portHndl, serPorts.PORT_NOT_FOUND, MAX_PORTS)    ' empty handles
-    longfill(@msgCount, 0, MAX_PORTS * 3)    ' preload w/zero's
+    longfill(@txState, SST_NEEDTX, utils.MAX_PORTS)    ' preset "need a tx message"
+    longfill(@portHndl, serPorts.PORT_NOT_FOUND, utils.MAX_PORTS)    ' empty handles
+    longfill(@msgTxCount, 0, utils.MAX_PORTS * 4)    ' preload w/zero's
 
     debug("* -----  TRANSMIT end STARTED  ----- *")
 
     ' testing setup only (rxp, txp, ....)
     portHndl[0] := serPorts.addPort(16, 17, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 1st open port
 
-{
+'{
     portHndl[1] := serPorts.addPort(18, 19, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 2nd open port
 
     ' orange, yellow pair
@@ -88,150 +86,45 @@ PUB main()| portIndex, portHandle, pNextString, bDidPass
 
     portHndl[7] := serPorts.addPort(30, 31, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 9th open port
 '}
-    debug("* Handles: ", sdec_long_array_(@portHndl, MAX_PORTS))
+    debug("* Handles: ", sdec_long_array_(@portHndl, utils.MAX_PORTS))
 
     serPorts.start()
 
-    ' for nay ports needing a tx send one, change to need an RX
-    repeat portIndex from 0 to MAX_PORTS - 1
+    ' test each port once then quit!
+    '  (we are checking hte wiring!)
+
+    repeat portIndex from 0 to utils.MAX_PORTS - 1
         if portHndl[portIndex] <> serPorts.PORT_NOT_FOUND
             if txState[portIndex] == SST_NEEDTX
-                msgCount[portIndex]++
-                getMessageForCount(@valBuffer, portIndex, msgCount[portIndex], MSG_RAW)
+                msgTxCount[portIndex]++
+                utils.getMessageForCount(@valBuffer, portIndex, msgTxCount[portIndex], utils.MSG_RAW)
                 serPorts.txStr(portHndl[portIndex], @valBuffer)
                 txState[portIndex] := SST_NEEDRX
                 debug("Tx #", udec_(portIndex + 1), " msg=[", zstr(@valBuffer), "]")
 
-    repeat
-        portHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
-        if portHandle <> serPorts.PORT_NOT_FOUND
-            portIndex := indexFromHandle(portHandle)
-            ' validate message
-            debug("Rx #", udec_(portIndex + 1), " msg=[", zstr(pNextString), "] cts [good=(", udec_(passCt[portIndex]), "), bad=(", udec_(failCt[portIndex]), ")]")
-            ' mark port as needing a TX
-            txState[portIndex] := SST_NEEDTX
-            quit    ' we received one, go send more
+            if txState[portIndex] == SST_NEEDRX
+                repeat
+                    portHandle, pNextString := serPorts.nextRxString(@rxBuffer,utils.CHAR_BUFFER_SIZE)
+                    if portHandle <> portHndl[portIndex]
+                        ' validate message
+                        msgRxCount[portIndex]++
+                        bValidStatus, passIncr, failincr :=  utils.validateAckedString(portIndex, msgRxCount[portIndex], pNextString)
+                        debug("Rx #", udec_(portIndex + 1), " msg=[", zstr(pNextString), "] cts [good=(", udec_(passCt[portIndex]), "), bad=(", udec_(failCt[portIndex]), ")]")
+                        ' mark port as needing a TX
+                        txState[portIndex] := SST_NEEDTX
+                        quit    ' we received one, go send more
 
 
     repeat    ' hold here forever....
 
 PRI indexFromHandle(portHandle) : nPortIndex | hndlIdx
 ' convert a port handle to the index into the list of portHandles
-  repeat hndlIdx from 0 to MAX_PORTS - 1
+  repeat hndlIdx from 0 to utils.MAX_PORTS - 1
     if portHndl[hndlIdx] == portHandle
         nPortIndex := hndlIdx
         quit  ' we have our answer, outta here!
 
 
-PRI testPortPair_P2_P2(handleSender, handleReceiver) | pNextString, bDidPass, fromHandle
-    ' if XMTR empty...
-    if serPorts.txComplete(handleSender)
-        ' generate & send numbered test message
-        sendIncreTestMsgFrom(handleSender)
-        ' wait for reply
-        repeat
-            fromHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
-        until fromHandle == handleReceiver
-        bDidPass := validateSentString(handleSender, handleReceiver, pNextString)
-        ' if BAD reply then flush receiver so we are ready for next
-        if not bDidPass
-            debug("* error RCV-END FLUSHed receiver, continuing...")
-            serPorts.rxFlush(handleReceiver)
-        ' if receiver OVERFLOW clear it
-        if serPorts.isRxOverflow(handleReceiver)
-            serPorts.rxFlush(handleReceiver)
-            serPorts.clearRxOverflow(handleReceiver)
-            debug("* cleared RCV-END OVERFLOW, continuing...")
-
-        ' gererate ACK form of test message
-        getMessageForCount(@valBuffer, handleSender, msgCount[handleSender], MSG_ACKD)
-        ' reply with numbered / ACKed test message
-        replyWithAckMsgFrom(handleReceiver, @valBuffer)
-        ' wait for reply
-        repeat
-            fromHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
-        until fromHandle == handleSender
-        bDidPass := validateAckedString(handleSender, handleSender, pNextString)
-        ' if BAD reply then flush receiver so we are ready for next
-        if not bDidPass
-            debug("* error SND-END FLUSHed receiver, continuing...")
-            serPorts.rxFlush(handleSender)
-        ' if receiver OVERFLOW clear it
-        if serPorts.isRxOverflow(handleSender)
-            serPorts.rxFlush(handleSender)
-            serPorts.clearRxOverflow(handleSender)
-            debug("* cleared SND-END OVERFLOW, continuing...")
-
-
-PRI testPortPair_P2_RPi(portHandle) | pNextString, bDidPass, fromHandle
-    ' if XMTR empty...
-    if serPorts.txComplete(portHandle)
-        ' generate & send numbered test message
-        sendIncreTestMsgFrom(portHandle)
-        ' wait for reply
-        repeat
-            fromHandle, pNextString := serPorts.nextRxString(@rxBuffer, CHAR_BUFFER_SIZE)
-        until fromHandle == portHandle
-        ' ensure reply is identical but with '---' replaced with 'ACK'
-        bDidPass := validateAckedString(portHandle, portHandle, pNextString)
-        ' if BAD reply then flush receiver so we are ready for next
-        if not bDidPass
-            debug("* error FLUSHed receiver, continuing...")
-            serPorts.rxFlush(portHandle)
-        ' if receiver OVERFLOW clear it
-        if serPorts.isRxOverflow(portHandle)
-            serPorts.rxFlush(portHandle)
-            serPorts.clearRxOverflow(portHandle)
-            debug("* cleared OVERFLOW, continuing...")
-
-
-PRI sendIncreTestMsgFrom(portHandle) | lenNonCtrl
-    getMessageForCount(@txBuffer, portHandle, ++msgCount[portHandle], FALSE)
-    serPorts.txStr(portHandle, @txBuffer)
-    lenNonCtrl := lenExcludingCtrl(@txBuffer)
-    debug("* TX p#", udec_(portHandle), " (", udec_(lenNonCtrl), "/", udec_(strsize(@txBuffer)), ")[", lstr_(@txBuffer, lenNonCtrl), "]")
-
-
-PRI replyWithAckMsgFrom(portHandle, pMessage) | lenNonCtrl
-    serPorts.txStr(portHandle, pMessage)
-    lenNonCtrl := lenExcludingCtrl(pMessage)
-    debug("* TX p#", udec_(portHandle), " (", udec_(lenNonCtrl), "/", udec_(strsize(pMessage)), ")[", lstr_(pMessage, lenNonCtrl), "]")
-
-
-PRI validateSentString(portHandleCounts, portHandleRcvr, pString) : bFailStatus
-    getMessageForCount(@valBuffer, portHandleCounts, msgCount[portHandleCounts], MSG_RAW)
-    bFailStatus := validateStringFrom(portHandleRcvr, pString, @valBuffer)
-
-
-PRI validateAckedString(portHandleCounts, portHandleRcvr, pString) : bFailStatus
-    getMessageForCount(@valBuffer, portHandleCounts, msgCount[portHandleCounts], MSG_ACKD)
-    bFailStatus := validateStringFrom(portHandleRcvr, pString, @valBuffer)
-
-
-PRI validateStringFrom(portHandleRcvr, pString, pDesiredString) : bFailStatus | lenNonCtrl, bDidPass, pResult, nCount
-    bFailStatus := bDidPass := (strcomp(pString, pDesiredString) == -1) ? TRUE : FALSE
-    if bDidPass
-        passCt[portHandleRcvr]++
-    else
-        failCt[portHandleRcvr]++
-    pResult := (bDidPass) ? @"    " : @"FAIL"
-    nCount := (bDidPass) ? passCt[portHandleRcvr] : failCt[portHandleRcvr]
-    lenNonCtrl := lenExcludingCtrl(pString)
-    debug("* RX p#", udec_(portHandleRcvr), " (", udec_(lenNonCtrl), "/", udec_(strsize(pString)), ")[", lstr_(pString, lenNonCtrl), "]: ", zstr_(pResult), " seq#", udec_(nCount))
-
-PRI getMessageForCount(pBuffer, portHandle, nCount, eMsgState)
-    if eMsgState == MSG_ACKD
-        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d ACK\r\n"), portHandle + 1, nCount)
-    elseif eMsgState == MSG_RAW
-        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d ---\r\n"), portHandle + 1, nCount)
-    elseif eMsgState == MSG_NAKD
-        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d NAK\r\n"), portHandle + 1, nCount)
-
-PRI lenExcludingCtrl(pStr) : nLen
-    ' reduce strsize to len not-including CRLF
-    repeat nLen from 0 to strsize(pStr)
-        if BYTE[pStr][nLen] == $0d or BYTE[pStr][nLen] == $0a
-            quit
 
 {{
 

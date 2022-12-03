@@ -1,0 +1,140 @@
+'' =================================================================================================
+''
+''   File....... test_utils.spin2
+''   Purpose.... exercise robustly the new 8-port serial transceiver routines
+''               this is the SEND end of the exerciser
+''   Authors.... Stephen M Moraco
+''               -- Copyright (c) 2022 Iron Sheep Productions, LLC
+''               -- see below for terms of use
+''   E-mail..... stephen@ironsheep.biz
+''   Started.... Dec 2022
+''   Updated.... 1 Dec 2022
+''
+'' =================================================================================================
+
+
+CON
+#0, MSG_UNKNOWN, MSG_RAW, MSG_ACKD, MSG_NAKD
+
+  MAX_PORTS  = 8                                                ' max ports for testing
+  CHAR_BUFFER_SIZE  = 80                                    ' room for building tx strings
+
+OBJ
+
+        strFmt    : "isp_mem_strings"                  ' in-memory formatted strings
+
+VAR
+
+    byte  valBuffer[CHAR_BUFFER_SIZE+1]
+
+
+    LONG  msgCount[MAX_PORTS]
+    LONG  passCt[MAX_PORTS]
+    LONG  failCt[MAX_PORTS]
+
+PUB validateSentString(portIdx, txMsgCount, pRxString) : bFailStatus, passIncr, failIncr
+    getMessageForCount(@valBuffer, portIdx, txMsgCount, MSG_RAW)
+    bFailStatus, passIncr, failIncr := validateStringFrom(portIdx, pRxString, @valBuffer)
+
+PUB validateAckedString(portIdx, rxMsgCount, pRxString) : bFailStatus, passIncr, failIncr
+    getMessageForCount(@valBuffer, portIdx, rxMsgCount, MSG_ACKD)
+    bFailStatus, passIncr, failIncr := validateStringFrom(portIdx, pRxString, @valBuffer)
+
+
+PUB validateStringFrom(portHandleRcvr, pString, pDesiredString) : bFailStatus, passIncr, failIncr | lenNonCtrl, bDidPass, pResult, nCount
+    bFailStatus := bDidPass := (strcomp(pString, pDesiredString) == -1) ? TRUE : FALSE
+    passIncr := failIncr := 0
+    if bDidPass
+        passIncr := 1
+    else
+        failIncr := 1
+    pResult := (bDidPass) ? @"    " : @"FAIL"
+    nCount := (bDidPass) ? passCt[portHandleRcvr] : failCt[portHandleRcvr]
+    lenNonCtrl := lenExcludingCtrl(pString) - 1 ' don't show CRC
+    debug("* RX p#", udec_(portHandleRcvr), " (", udec_(lenNonCtrl), "/", udec_(strsize(pString)), ")[", lstr_(pString, lenNonCtrl), "]: ", zstr_(pResult), " seq#", udec_(nCount))
+
+
+PUB getMessageForCount(pBuffer, portIndex, nCount, eMsgState)
+    if eMsgState == MSG_ACKD
+        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d ACK?\r\n"), portIndex + 1, nCount)
+    elseif eMsgState == MSG_RAW
+        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d ---?\r\n"), portIndex + 1, nCount)
+    elseif eMsgState == MSG_NAKD
+        strFmt.sFormatStr2(pBuffer, string("%d:Test Message #%4d NAK?\r\n"), portIndex + 1, nCount)
+    replaceMarkerWithCRC(pBuffer, @"?")
+
+PUB lenExcludingCtrl(pStr) : nLen
+'' Reduce strsize to len not-including CRLF
+    repeat nLen from 0 to strsize(pStr)
+        if BYTE[pStr][nLen] == $0d or BYTE[pStr][nLen] == $0a
+            quit
+
+PRI crc8(p_src, n) : crc | bytVal
+' Returns CRC8 of n bytes at p_src
+
+        org
+.loop           rdbyte    bytVal, p_src
+                add       p_src, #1
+                rev       bytVal
+                setq      bytVal
+                crcnib    crc, #$8C
+                crcnib    crc, #$8C
+                djnz      n, #.loop
+        end
+
+PRI replaceMarkerWithCRC(pStr, pMarkerChar) : bPlacedStatus | strLen, byteIdx, bFoundMarker, crcIdx, calcCrc
+' calculate and place the 8-bit crc in the marked place in the message
+' return T/F where T means the CRC was placed in the message
+    strLen := strsize(pStr)
+    crcIdx := strLen - 3
+    bFoundMarker := FALSE
+    if BYTE[pStr][crcIdx] == BYTE[pMarkerChar][0]
+        bFoundMarker := TRUE
+
+    if bFoundMarker
+        calcCrc := crc8(pStr, crcIdx)
+        ' don't appear to be one of our critical chars!
+        if calcCrc == $0a or calcCrc == $0d or calcCrc == $00
+            calcCrc++
+        BYTE[pStr][crcIdx] := calcCrc
+    bPlacedStatus := bFoundMarker
+
+PRI isValidCRC(pStr) : bValidStatus | strLen, crcIdx, calcCRC
+' Return T/F where T means the CRC calculated matched that found in the message
+    bValidStatus := FALSE
+    strLen := strsize(pStr)
+    crcIdx := strLen - 3
+    calcCRC := crc8(pStr, crcIdx)
+    ' don't appear to be one of our critical chars!
+    if calcCrc == $0a or calcCrc == $0d or calcCrc == $00
+        calcCrc++
+    if BYTE[pStr][crcIdx] == calcCRC
+        bValidStatus := TRUE
+
+
+{{
+
+ -------------------------------------------------------------------------------------------------
+  MIT License
+
+  Copyright (c) 2022 Iron Sheep Productions, LLC
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+ =================================================================================================
+}}

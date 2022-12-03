@@ -1,9 +1,30 @@
 #!/bin/bash
+SCRIPT=${0##*/}
+SCRIPT_VERSION="1.0"
 
 SRC_SPIN_DIR=/Users/stephen/Dropbox/PropV2-Shared/Projects/P2-octoSerialSW
 DST_SPIN_DIR="/Users/stephen/Projects/Projects-ExtGit/IronSheepProductionsLLC/Projects Propeller/P2-octoSerial/P2-OctoSerial-subsystem"
+ALT_DST_SPIN_DIR="/Users/stephen/Projects/Projects-ExtGit/IronSheepProductionsLLC/Propeller2/P2-OctoSerial/P2-OctoSerial-subsystem"
 
-(set -x;scp pi@piprop-wifi.home:/opt/P2-octoSerial/* "${DST_SPIN_DIR}/RPi-source")
+TARGET_SPIN_DIR=${DST_SPIN_DIR}
+if [ ! -d "${TARGET_SPIN_DIR}" ]; then
+	TARGET_SPIN_DIR=${ALT_DST_SPIN_DIR}
+	if [ ! -d "${TARGET_SPIN_DIR}" ]; then
+		echo "$SCRIPT: target dir [${TARGET_SPIN_DIR}] not found!" >&2
+		exit 1;
+	fi
+fi
+
+echo "$SCRIPT: looking for piprop-wifi.home" >&2
+ping -c 1 -t 1 piprop-wifi.home 2>/dev/null 1>/dev/null
+ERROR_CODE=$?
+#echo "$SCRIPT: found error=$ERROR_CODE" >&2
+if [ $ERROR_CODE == 0 ]; then
+	(set -x;scp pi@piprop-wifi.home:/opt/P2-octoSerial/* "${TARGET_SPIN_DIR}/RPi-source")
+else
+	echo "$SCRIPT: RPi not online, skipping scp(1) file copy" >&2
+	echo "" >&2
+fi
 
 FILES=$(cat <<_FILE_EOF_
 demo_octoSystem.spin2
@@ -11,6 +32,9 @@ isp_mem_strings.spin2
 isp_octoport_serial.spin2
 isp_string_queue.spin2
 isp_stack_check.spin2
+test_octoExercise_recv.spin2
+test_octoExercise_send.spin2
+test_utils.spin2
 jm_nstrings.spin2
 test_octoExercise_recv.spin2
 test_octoExercise_send.spin2
@@ -18,5 +42,5 @@ _FILE_EOF_
 )
 
 for FILBASE in ${FILES}; do
-	(set -x;cp -p "${SRC_SPIN_DIR}"/${FILBASE} "${DST_SPIN_DIR}/P2-source")
+	(set -x;cp -p "${SRC_SPIN_DIR}"/${FILBASE} "${TARGET_SPIN_DIR}/P2-source")
 done
