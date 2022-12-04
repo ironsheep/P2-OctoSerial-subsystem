@@ -57,7 +57,10 @@ VAR
   LONG  passCt[utils.MAX_PORTS]
   LONG  failCt[utils.MAX_PORTS]
 
-PUB main()| portIndex, portHandle, pNextString, bDidPass, bValidStatus, passIncr, failIncr
+  LONG  currPortHandle
+  LONG  currPortIndex
+
+PUB main()| portHandle, pNextString, bDidPass, bValidStatus, passIncr, failIncr, lenNonCtrl, msgLen, freeSpaceBytes
 
     longfill(@txState, SST_NEEDTX, utils.MAX_PORTS)    ' preset "need a tx message"
     longfill(@portHndl, serPorts.PORT_NOT_FOUND, utils.MAX_PORTS)    ' empty handles
@@ -66,25 +69,37 @@ PUB main()| portIndex, portHandle, pNextString, bDidPass, bValidStatus, passIncr
     debug("* -----  TRANSMIT end STARTED  ----- *")
 
     ' testing setup only (rxp, txp, ....)
-    portHndl[0] := serPorts.addPort(16, 17, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 1st open port
-
 '{
+    ' Pair Blue/Green Long
+    portHndl[0] := serPorts.addPort(16, 17, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 1st open port
+'}
+'{
+    ' Pair Yellow/Orange Long
     portHndl[1] := serPorts.addPort(18, 19, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 2nd open port
-
-    ' orange, yellow pair
-    portHndl[2] := serPorts.addPort(20, 21, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 3rd open port
-
-    portHndl[3] := serPorts.addPort(22, 23, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 4th open port
-
-    ' green, blue pair
-    portHndl[4] := serPorts.addPort(24, 25, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 5th open port
-
-    portHndl[5] := serPorts.addPort(26, 27, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 6th open port
-
-    ' red, brown pair
-    portHndl[6] := serPorts.addPort(28, 29, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 7th open port
-
-    portHndl[7] := serPorts.addPort(30, 31, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_15K)                       ' 9th open port
+'}
+'{
+    ' Pair Red/Brown Long
+    portHndl[2] := serPorts.addPort(20, 21, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 3rd open port
+'}
+'{
+    ' Pair Purple/Gray Long
+    portHndl[3] := serPorts.addPort(22, 23, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 4th open port
+'}
+'{
+    ' Pair Orange/Yellow w/LA (OK)
+    portHndl[4] := serPorts.addPort(24, 25, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 5th open port
+'}
+'{
+    ' Pair Yellow/Green w/LA Now Red/Orange w/LA
+    portHndl[5] := serPorts.addPort(26, 27, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 6th open port
+'}
+'{
+    ' Pair Blue/Purple
+    portHndl[6] := serPorts.addPort(28, 29, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 7th open port
+'}
+'{
+    ' Pair Whaite/Gray
+    portHndl[7] := serPorts.addPort(30, 31, serPorts.MODE_NONE, BAUD_OCTO_PORTS, serPorts.PU_3K3)                       ' 9th open port
 '}
     debug("* Handles: ", sdec_long_array_(@portHndl, utils.MAX_PORTS))
 
@@ -93,25 +108,41 @@ PUB main()| portIndex, portHandle, pNextString, bDidPass, bValidStatus, passIncr
     ' test each port once then quit!
     '  (we are checking hte wiring!)
 
-    repeat portIndex from 0 to utils.MAX_PORTS - 1
-        if portHndl[portIndex] <> serPorts.PORT_NOT_FOUND
-            if txState[portIndex] == SST_NEEDTX
-                msgTxCount[portIndex]++
-                utils.getMessageForCount(@valBuffer, portIndex, msgTxCount[portIndex], utils.MSG_RAW)
-                serPorts.txStr(portHndl[portIndex], @valBuffer)
-                txState[portIndex] := SST_NEEDRX
-                debug("Tx #", udec_(portIndex + 1), " msg=[", zstr(@valBuffer), "]")
+    repeat currPortIndex from 0 to utils.MAX_PORTS - 1
+        currPortHandle := portHndl[currPortIndex]
+        if currPortHandle <> serPorts.PORT_NOT_FOUND
+            if txState[currPortIndex] == SST_NEEDTX
+                ' incre count of sent messages
+                msgTxCount[currPortIndex]++
+                utils.getMessageForCount(@valBuffer, currPortIndex, msgTxCount[currPortIndex], utils.MSG_RAW)
+                ' wait for tx bufffer to have room for entire message
+                msgLen := strsize(@valBuffer)
+                repeat
+                    freeSpaceBytes := serPorts.txBytesEmpty(currPortHandle)
+                    if freeSpaceBytes < msgLen
+                        debug("* wr chk ", udec(msgLen), udec(freeSpaceBytes))
+                        waitms(1)   ' let some time pass to tx more of bytes already in buffer
+                    else
+                        quit
+                ' send it (place it into buffer quickly)
+                serPorts.txStr(currPortHandle, @valBuffer)
+                txState[currPortIndex] := SST_NEEDRX
+                lenNonCtrl := utils.lenExcludingCtrl(@valBuffer) - 1  ' no display of CRC
+                debug("Tx #", udec_(currPortIndex + 1), " msg=[", lstr_(@valBuffer, lenNonCtrl), "]")
 
-            if txState[portIndex] == SST_NEEDRX
+            if txState[currPortIndex] == SST_NEEDRX
                 repeat
                     portHandle, pNextString := serPorts.nextRxString(@rxBuffer,utils.CHAR_BUFFER_SIZE)
-                    if portHandle <> portHndl[portIndex]
+                    if portHandle == currPortHandle
+                        lenNonCtrl := utils.lenExcludingCtrl(@valBuffer) - 1  ' no display of CRC
                         ' validate message
-                        msgRxCount[portIndex]++
-                        bValidStatus, passIncr, failincr :=  utils.validateAckedString(portIndex, msgRxCount[portIndex], pNextString)
-                        debug("Rx #", udec_(portIndex + 1), " msg=[", zstr(pNextString), "] cts [good=(", udec_(passCt[portIndex]), "), bad=(", udec_(failCt[portIndex]), ")]")
+                        msgRxCount[currPortIndex]++
+                        bValidStatus, passIncr, failIncr :=  utils.validateAckedString(currPortIndex, msgRxCount[currPortIndex], pNextString)
+                        passCt[currPortIndex] += passIncr
+                        failCt[currPortIndex] += failIncr
+                        debug("Rx #", udec_(currPortIndex + 1), " msg=[", lstr_(pNextString, lenNonCtrl), "] cts [good=(", udec_(passCt[currPortIndex]), "), bad=(", udec_(failCt[currPortIndex]), ")]")
                         ' mark port as needing a TX
-                        txState[portIndex] := SST_NEEDTX
+                        txState[currPortIndex] := SST_NEEDTX
                         quit    ' we received one, go send more
 
 

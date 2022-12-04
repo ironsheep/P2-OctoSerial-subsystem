@@ -51,7 +51,7 @@ PUB validateStringFrom(portHandleRcvr, pString, pDesiredString) : bFailStatus, p
     pResult := (bDidPass) ? @"    " : @"FAIL"
     nCount := (bDidPass) ? passCt[portHandleRcvr] : failCt[portHandleRcvr]
     lenNonCtrl := lenExcludingCtrl(pString) - 1 ' don't show CRC
-    debug("* RX p#", udec_(portHandleRcvr), " (", udec_(lenNonCtrl), "/", udec_(strsize(pString)), ")[", lstr_(pString, lenNonCtrl), "]: ", zstr_(pResult), " seq#", udec_(nCount))
+    'debug("*  RX p#", udec_(portHandleRcvr+1), " [", lstr_(pString, lenNonCtrl), "]: ", zstr_(pResult), " seq#", udec_(nCount))
 
 
 PUB getMessageForCount(pBuffer, portIndex, nCount, eMsgState)
@@ -94,8 +94,8 @@ PRI replaceMarkerWithCRC(pStr, pMarkerChar) : bPlacedStatus | strLen, byteIdx, b
     if bFoundMarker
         calcCrc := crc8(pStr, crcIdx)
         ' don't appear to be one of our critical chars!
-        if calcCrc == $0a or calcCrc == $0d or calcCrc == $00
-            calcCrc++
+        if calcCrc < $20
+            calcCrc += $80
         BYTE[pStr][crcIdx] := calcCrc
     bPlacedStatus := bFoundMarker
 
@@ -106,8 +106,8 @@ PRI isValidCRC(pStr) : bValidStatus | strLen, crcIdx, calcCRC
     crcIdx := strLen - 3
     calcCRC := crc8(pStr, crcIdx)
     ' don't appear to be one of our critical chars!
-    if calcCrc == $0a or calcCrc == $0d or calcCrc == $00
-        calcCrc++
+    if calcCrc < $20
+        calcCrc += $80
     if BYTE[pStr][crcIdx] == calcCRC
         bValidStatus := TRUE
 

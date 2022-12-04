@@ -455,6 +455,18 @@ PUB txPrefix(portHandle, pStr, prefixLen) | nChar
             else
                 quit
 
+PUB txBytesEmpty(portHandle) : nbrCharsAvail
+'' Returns count of characters in backend COG Transceiver receive buffer waiting to be unloaded
+    if isValidPortHandle(portHandle)
+        nbrCharsAvail := 0
+        if (txTailIdx[portHandle] <> txHeadIdx[portHandle])                       ' if BYTE(s) available
+            nbrCharsAvail := txHeadIdx[portHandle] - txTailIdx[portHandle]        ' calculate count
+            if (nbrCharsAvail < 0)
+                nbrCharsAvail += BUF_SIZE                                         ' fix if wrapped around
+        ' and invert this value
+        nbrCharsAvail := BUF_SIZE - nbrCharsAvail
+        'debug("SP8: p", udec_(portHandle+1), " free=", udec_long_(nbrCharsAvail))
+
 PUB txFlush(portHandle)
 '' Wait until transmit buffer is empty
 '' -- will delay one additional BYTE period after buffer is empty
@@ -512,7 +524,8 @@ PUB nextRxString(pUserBuf, nBufLen) : portHandle, pNextString | bStringComplete,
         repeat nPortHandle from 0 to activPortCount - 1
             ' if this channel OVERRAN itself... tell this via debug
             if bRxOverflow[nPortHandle] <> FALSE
-                debug("SP8: p", udec_(nPortHandle+1), uhex_long(bRxOverflow[nPortHandle]))
+                debug("SP8: p", udec_(nPortHandle+1), uhex_long_(bRxOverflow[nPortHandle]))
+                bRxOverflow[nPortHandle] := FALSE
             ' point to buffer for string
             pString := @BYTE[@strBuffer][nPortHandle * BUF_SIZE]
             ' get char for this channel if one received
@@ -591,6 +604,7 @@ PRI initIfNotAlready()
     if initialized <> INITIALIZED_FLAG
         ' zero our control variables
         longfill(@activPortCount, 0, COPY_CNT_IN_LONGS)
+        longfill(@bRxOverflow, 0, MAX_PORTS)
         ' no queuing for now
         bUseStringQueCog := FALSE  ' set to TRUE to enable unload COG and use of string queue
 
