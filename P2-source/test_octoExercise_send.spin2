@@ -60,7 +60,7 @@ VAR
   LONG  currPortHandle
   LONG  currPortIndex
 
-PUB main()| portHandle, pNextString, bDidPass, bValidStatus, passIncr, failIncr, lenNonCtrl, msgLen, freeSpaceBytes
+PUB main()| portHandle, pNextString, bDidPass, bValidStatus, passIncr, failIncr, lenNonCtrl, msgLen, freeSpaceBytes, bFoundNeedingRx
 
     longfill(@txState, SST_NEEDTX, utils.MAX_PORTS)    ' preset "need a tx message"
     longfill(@portHndl, serPorts.PORT_NOT_FOUND, utils.MAX_PORTS)    ' empty handles
@@ -105,46 +105,54 @@ PUB main()| portHandle, pNextString, bDidPass, bValidStatus, passIncr, failIncr,
 
     serPorts.start()
 
-    ' test each port once then quit!
-    '  (we are checking hte wiring!)
+    repeat
+        ' test each port once then quit!
+        '  (we are checking hte wiring!)
+        repeat currPortIndex from 0 to utils.MAX_PORTS - 1
+            currPortHandle := portHndl[currPortIndex]
+            if currPortHandle <> serPorts.PORT_NOT_FOUND
+                if txState[currPortIndex] == SST_NEEDTX
+                    ' incre count of sent messages
+                    msgTxCount[currPortIndex]++
+                    utils.getMessageForCount(@valBuffer, currPortIndex, msgTxCount[currPortIndex], utils.MSG_RAW)
+                    ' wait for tx bufffer to have room for entire message
+                    msgLen := strsize(@valBuffer)
+                    repeat
+                        freeSpaceBytes := serPorts.txBytesEmpty(currPortHandle)
+                        if freeSpaceBytes < msgLen
+                            debug("* wr chk ", udec(msgLen), udec(freeSpaceBytes))
+                            waitms(1)   ' let some time pass to tx more of bytes already in buffer
+                        else
+                            quit
+                    ' send it (place it into buffer quickly)
+                    serPorts.txStr(currPortHandle, @valBuffer)
+                    txState[currPortIndex] := SST_NEEDRX
+                    lenNonCtrl := utils.lenExcludingCtrl(@valBuffer) - 1  ' no display of CRC
+                    debug("Tx #", udec_(currPortIndex + 1), " msg=[", lstr_(@valBuffer, lenNonCtrl), "]")
 
-    repeat currPortIndex from 0 to utils.MAX_PORTS - 1
-        currPortHandle := portHndl[currPortIndex]
-        if currPortHandle <> serPorts.PORT_NOT_FOUND
-            if txState[currPortIndex] == SST_NEEDTX
-                ' incre count of sent messages
-                msgTxCount[currPortIndex]++
-                utils.getMessageForCount(@valBuffer, currPortIndex, msgTxCount[currPortIndex], utils.MSG_RAW)
-                ' wait for tx bufffer to have room for entire message
-                msgLen := strsize(@valBuffer)
-                repeat
-                    freeSpaceBytes := serPorts.txBytesEmpty(currPortHandle)
-                    if freeSpaceBytes < msgLen
-                        debug("* wr chk ", udec(msgLen), udec(freeSpaceBytes))
-                        waitms(1)   ' let some time pass to tx more of bytes already in buffer
-                    else
-                        quit
-                ' send it (place it into buffer quickly)
-                serPorts.txStr(currPortHandle, @valBuffer)
-                txState[currPortIndex] := SST_NEEDRX
-                lenNonCtrl := utils.lenExcludingCtrl(@valBuffer) - 1  ' no display of CRC
-                debug("Tx #", udec_(currPortIndex + 1), " msg=[", lstr_(@valBuffer, lenNonCtrl), "]")
-
-            if txState[currPortIndex] == SST_NEEDRX
-                repeat
-                    portHandle, pNextString := serPorts.nextRxString(@rxBuffer,utils.CHAR_BUFFER_SIZE)
-                    if portHandle == currPortHandle
-                        lenNonCtrl := utils.lenExcludingCtrl(@valBuffer) - 1  ' no display of CRC
-                        ' validate message
-                        msgRxCount[currPortIndex]++
-                        bValidStatus, passIncr, failIncr :=  utils.validateAckedString(currPortIndex, msgRxCount[currPortIndex], pNextString)
-                        passCt[currPortIndex] += passIncr
-                        failCt[currPortIndex] += failIncr
-                        debug("Rx #", udec_(currPortIndex + 1), " msg=[", lstr_(pNextString, lenNonCtrl), "] cts [good=(", udec_(passCt[currPortIndex]), "), bad=(", udec_(failCt[currPortIndex]), ")]")
-                        ' mark port as needing a TX
-                        txState[currPortIndex] := SST_NEEDTX
-                        quit    ' we received one, go send more
-
+        repeat
+            portHandle, pNextString := serPorts.nextRxString(@rxBuffer,utils.CHAR_BUFFER_SIZE)
+            if portHandle <> serPorts.PORT_NOT_FOUND
+                currPortIndex := indexFromHandle(portHandle)
+                if txState[currPortIndex] == SST_NEEDRX
+                    txState[currPortIndex] := SST_NEEDTX
+                lenNonCtrl := utils.lenExcludingCtrl(pNextString) - 1  ' no display of CRC
+                ' validate message
+                msgRxCount[currPortIndex]++
+                bValidStatus, passIncr, failIncr :=  utils.validateAckedString(currPortIndex, msgRxCount[currPortIndex], pNextString)
+                passCt[currPortIndex] += passIncr
+                failCt[currPortIndex] += failIncr
+                debug("Rx #", udec_(currPortIndex + 1), " msg=[", lstr_(pNextString, lenNonCtrl), "] cts [good=(", udec_(passCt[currPortIndex]), "), bad=(", udec_(failCt[currPortIndex]), ")]")
+                ' mark port as needing a TX
+                txState[currPortIndex] := SST_NEEDTX
+            else
+                bFoundNeedingRx := FALSE
+                repeat currPortIndex from 0 to utils.MAX_PORTS - 1
+                    if txState[currPortIndex] == SST_NEEDRX
+                        bFoundNeedingRx := TRUE
+                        quit' have answer, abort loop
+                if not bFoundNeedingRx
+                    quit    ' exit receive loop all responses received!
 
     repeat    ' hold here forever....
 
