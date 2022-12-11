@@ -46,43 +46,43 @@ CON { PUBLIC Interface Enums }
 ' "or" the following flag-constants together to build a serial mode value (or use MODE_NONE if no flags needed)
 '  (e.g.,  MY_PORT_MODE = MODE_FLAG_INV_RX | MODE_OPEN_DRN_SRC_TX)
 
-' /-- mode flag bits....
-'             %0xx1 = invert rx
-  MODE_FLAG_INV_RX = %0001
-'             %0x1x = invert tx
-  MODE_FLAG_INV_TX = %0010
-'             %01xx = open-drain/open-source tx
-  MODE_OPEN_DRN_SRC_TX = %0100
-' \-- mode flag bits....
+    ' /-- mode flag bits....
+    '             %0xx1 = invert rx
+    MODE_FLAG_INV_RX = %0001
+    '             %0x1x = invert tx
+    MODE_FLAG_INV_TX = %0010
+    '             %01xx = open-drain/open-source tx
+    MODE_OPEN_DRN_SRC_TX = %0100
+    ' \-- mode flag bits....
 
-  MODE_NONE = 0 ' no mode values needed
+    MODE_NONE = 0 ' no mode values needed
 
     ' these are different values in case we see the numeric in debug
-  PIN_NOT_USED = -1      ' the code counts on this value being -1 (one less then zero)!
-  NO_CHAR = -2
-  PORT_NOT_FOUND = -3
+    PIN_NOT_USED = -1      ' the code counts on this value being -1 (one less then zero)!
+    NO_CHAR = -2
+    PORT_NOT_FOUND = -3
 
     ' tx pin pull-up constants
-  #0, PU_NONE, PU_1K5, PU_3K3, PU_15K                           ' pull-up options
+    #0, PU_NONE, PU_1K5, PU_3K3, PU_15K                           ' pull-up options
 
 CON { ASCII control chars }
 
-  HOME     =  1
-  CRSR_XY  =  2
-  CRSR_LF  =  3
-  CRSR_RT  =  4
-  CRSR_UP  =  5
-  CRSR_DN  =  6
-  BELL     =  7
-  BKSP     =  8
-  TAB      =  9
-  LF       = 10
-  CLR_EOL  = 11
-  CLR_DN   = 12
-  CR       = 13
-  CRSR_X   = 14
-  CRSR_Y   = 15
-  CLS      = 16
+    HOME     =  1
+    CRSR_XY  =  2
+    CRSR_LF  =  3
+    CRSR_RT  =  4
+    CRSR_UP  =  5
+    CRSR_DN  =  6
+    BELL     =  7
+    BKSP     =  8
+    TAB      =  9
+    LF       = 10
+    CLR_EOL  = 11
+    CLR_DN   = 12
+    CR       = 13
+    CRSR_X   = 14
+    CRSR_Y   = 15
+    CLS      = 16
 
 CON { driver constants }
 
@@ -638,54 +638,48 @@ PRI rxCheckInternal(portHandle) : nChar
 CON ' ----- 8-Port backend transceiver in Cog -----
 
 DAT { smart pin uart/buffer manager }
-'---+-----------+---------+---------------------+----+-----------+--------------+
                 org
 uart_8_port
                 ' read hub arrays into cog
-                rdlong    portnum, ptra++            ' get # of open ports
-                setq      #(COPY_CNT_IN_LONGS - 1)     ' load number of longs to copy
-                rdlong    rxpin, ptra                ' block-copy hub variables to cog
-                sub       portnum, #1                ' subtract 1 to get actual port number max value
+                rdlong  portnum, ptra++             ' get # of open ports
+                setq    #(COPY_CNT_IN_LONGS - 1)    ' load number of longs to copy
+                rdlong  rxpin, ptra                 ' block-copy hub variables to cog
+                sub     portnum, #1                 ' subtract 1 to get actual port number max value
 
-'                drvl      pgrpPortNbr                ' LA INSTRU. clear port nbr LA pins
-'                drvl      pinTskTx                   ' LA INSTRU. clear port nbr LA pins
-'                drvl      pinTskRx                   ' LA INSTRU. clear port nbr LA pins
-                'debug("sc8: - ", udec_long(portnum))
-                'debug("sc8: - ", udec_long(rxpin))
-                'debug("sc8: - ", udec_long(txpin))
-                'debug("sc8: - ", uhex_long(p_rxbuf))
-                'debug("sc8: - ", uhex_long(p_txbuf))
+'                drvl    pgrpPortNbr                 ' LA INSTRU. clear port nbr LA pins
+'                drvl    pinTskTx                    ' LA INSTRU. clear port nbr LA pins
+'                drvl    pinTskRx                    ' LA INSTRU. clear port nbr LA pins
 
-uart_main                                            ' loop through each port, get rx, tx pins
-                mov       portctr, #0                ' initialize portctr = 0
+uart_main                                           ' loop through each port, get rx, tx pins
+                mov     portctr, #0                 ' initialize portctr = 0
 
                 '-------------------------------
-.loop                                                ' get offsets for array values
+.loop                                               ' get offsets for array values
 {
                 ' write port number to LA pins
-                mov       bitsForLA, portctr         ' LA INSTRU.
-                SHL       bitsForLA, #8              ' LA INSTRU.
-                setq      laPortMask                 ' LA INSTRU.  set emit lower 3-bits
-                muxq      OUTA, bitsForLA            ' LA INSTRU.  write port # to LA bits 8-10
+                mov     bitsForLA, portctr          ' LA INSTRU.
+                SHL     bitsForLA, #8               ' LA INSTRU.
+                setq    laPortMask                  ' LA INSTRU.   set emit lower 3-bits
+                muxq    OUTA, bitsForLA             ' LA INSTRU.   write port # to LA bits 8-10
                 ' write complete
 '}
-                alts      portctr, #rxpin            ' add portctr p_rxhead_idx to rxpin - rxpin[portctr]
-                mov       rxd, 0-0                     ' copy rxpin to rxd
+                alts    portctr, #rxpin             ' add portctr p_rxhead_idx to rxpin - rxpin[portctr]
+                mov     rxd, 0-0                    ' copy rxpin to rxd
 
-                alts      portctr, #txpin            ' add portctr p_rxhead_idx to txpin - txpin[portctr]
-                mov       txd, 0-0                     ' copy txpin to txd
-                                                     ' rxpin available, jump to rx_serial or tx_serial
-                testb     rxd,  #31             wc      ' rx pin in use? -test for -1 when no pin saved
-    if_nc       call      #rx_serial
+                alts    portctr, #txpin             ' add portctr p_rxhead_idx to txpin - txpin[portctr]
+                mov     txd, 0-0                    ' copy txpin to txd
+                                                    ' rxpin available, jump to rx_serial or tx_serial
+                testb   rxd, #31                wc  ' rx pin in use? -test for -1 when no pin saved
+    if_nc       call    #rx_serial
 
-                testb     txd, #31              wc   ' tx in use? -test for -1
-    if_nc       call      #tx_serial
+                testb   txd, #31                wc   ' tx in use? -test for -1
+    if_nc       call    #tx_serial
                                                      ' increment counter to next port. if portctr =
                                                      ' open ports, reset portctr to 0 and loop
-                incmod    portctr, portnum      wc   ' check if portctr = open ports
-    if_nc       jmp       #.loop                                ' repeat loop for each open port
+                incmod  portctr, portnum        wc   ' check if portctr = open ports
+    if_nc       jmp     #.loop                                  ' repeat loop for each open port
 
-                jmp       #uart_main
+                jmp     #uart_main
 
                 '-------------------------------
                 ' reminder - circular queue basics:
@@ -698,36 +692,36 @@ uart_main                                            ' loop through each port, g
                 '      save incremented tail
 
 rx_serial
-'                outnot    pinTskRx                   ' LA INSTRU.
-                testp     rxd                   wc   ' Q: does smartpin have received byte? (CY=Have BYTE)
-'    if_nc       outnot    pinTskRx                   ' LA INSTRU.
-    if_nc       ret                                  ' NO: return
+'                outnot  pinTskRx                    ' LA INSTRU.
+                testp   rxd                     wc  ' Q: does smartpin have received byte? (CY=Have BYTE)
+'    if_nc       outnot  pinTskRx                    ' LA INSTRU.
+    if_nc       ret                                 ' NO: return
 
-                rdpin     newChar, rxd               ' read new BYTE from smartpin ( allowing smart pin to rx next )
-                shr       newChar, #32-8             ' align lsb (if 2 stop bits would this be -9?)
+                rdpin   newChar, rxd                ' read new BYTE from smartpin ( allowing smart pin to rx next )
+                shr     newChar, #32-8              ' align lsb (if 2 stop bits would this be -9?)
 
-                alts      portctr, #p_rxhead         ' Get rxQHead index from hub into temp var
-                mov       p_rxhead_idx, 0-0
-                rdlong    p_queue, p_rxhead_idx
+                alts    portctr, #p_rxhead          '   Get rxQHead index from hub into temp var
+                mov     p_rxhead_idx, 0-0
+                rdlong  p_queue, p_rxhead_idx
 
-                alts      portctr, #p_rxtail         ' Get rxQTail index from hub
-                mov       p_rxtail_idx, 0-0
-                rdlong    queIdx, p_rxtail_idx
+                alts    portctr, #p_rxtail          ' Get rxQTail index from hub
+                mov     p_rxtail_idx, 0-0
+                rdlong  queIdx, p_rxtail_idx
 
-                incmod    queIdx, #BUF_SIZE-1          ' increment rxQTail index (modulus math)
-                cmp       p_queue, queIdx       wz   ' Q: HeadIdx == TailIdx? (NOT have room for next char?)
-    if_e        alts      portctr, #p_rxOvflw        ' YES, get ptr to Rx Overflow Error Boolean
-    if_e        wrlong    trueBOOL, 0-0              ' YES, set bool to TRUE
-'    if_e        outnot    pinTskRx                   ' LA INSTRU.
-    if_e        ret                                  ' YES, queue is FULL, exit (w/error) without saving char
+                incmod  queIdx, #BUF_SIZE-1         ' increment rxQTail index (modulus math)
+                cmp     p_queue, queIdx         wz  ' Q: HeadIdx == TailIdx? (NOT have room for next char?)
+    if_e        alts    portctr, #p_rxOvflw         ' YES, get ptr to Rx Overflow Error Boolean
+    if_e        wrlong  trueBOOL, 0-0               ' YES, set bool to TRUE
+'    if_e        outnot  pinTskRx                    ' LA INSTRU.
+    if_e        ret                                 ' YES, queue is FULL, exit (w/error) without saving char
 
-                alts      portctr, #p_rxbuf          ' NO, get base address of Rx Queue
-                mov       p_queue, 0-0
-                add       p_queue, queIdx            ' add-in offset to tail
+                alts    portctr, #p_rxbuf           ' NO, get base address of Rx Queue
+                mov     p_queue, 0-0
+                add     p_queue, queIdx             ' add-in offset to tail
 
-                wrbyte    newChar, p_queue           ' write char to queue[tail]
-                wrlong    queIdx, p_rxtail_idx       ' write rxQTail index back to hub
-'                outnot    pinTskRx                   ' LA INSTRU.
+                wrbyte  newChar, p_queue            ' write char to queue[tail]
+                wrlong  queIdx, p_rxtail_idx        ' write rxQTail index back to hub
+'                outnot  pinTskRx                    ' LA INSTRU.
                 ret
 
                 '-------------------------------
@@ -739,68 +733,68 @@ rx_serial
                 '     incr head (mod que size)
                 '     deque char
 tx_serial
-'                outnot    pinTskTx                    ' LA INSTRU.
+'                outnot  pinTskTx                    ' LA INSTRU.
 
-                rdpin     p_queue, txd           wc   ' Q: still transmitting last char?, (CY=not done)
-'    if_c        outnot    pinTskTx                    ' LA INSTRU.
-    if_c        ret                                  ' YES: abort (too early to send next)
+                rdpin   p_queue, txd            wc  ' Q: still transmitting last char?, (CY=not done)
+'    if_c        outnot  pinTskTx                    ' LA INSTRU.
+    if_c        ret                                 ' YES: abort (too early to send next)
 
-                alts      portctr, #p_txhead         ' Get txQHead index from hub
-                mov       p_txhead_idx, 0-0
-                rdlong    queIdx, p_txhead_idx
+                alts    portctr, #p_txhead          ' Get txQHead index from hub
+                mov     p_txhead_idx, 0-0
+                rdlong  queIdx, p_txhead_idx
 
-                alts      portctr, #p_txtail         ' Get txQTail index from hub into temp var
-                mov       p_txtail_idx, 0-0
-                rdlong    p_queue, p_txtail_idx
+                alts    portctr, #p_txtail          ' Get txQTail index from hub into temp var
+                mov     p_txtail_idx, 0-0
+                rdlong  p_queue, p_txtail_idx
 
-                cmp       p_queue, queIdx       wz   ' Q: HeadIdx == TailIdx?
-'    if_e        outnot    pinTskTx                   ' LA INSTRU.
-    if_e        ret                                  ' YES, queue is EMPTY, we're done
+                cmp     p_queue, queIdx         wz  ' Q: HeadIdx == TailIdx?
+'    if_e        outnot  pinTskTx                    ' LA INSTRU.
+    if_e        ret                                 ' YES, queue is EMPTY, we're done
 
-                alts      portctr, #p_txbuf          ' get base address of Tx Queue
-                mov       p_queue, 0-0
-                incmod    queIdx, #BUF_SIZE-1          ' increment txQHead index (modulus math)
-                add       p_queue, queIdx            ' add-in offset to head
-                rdbyte    newChar, p_queue           ' read char from queue[head]
-                wypin     newChar, txd               ' tell tx pin to send this character
+                alts    portctr, #p_txbuf           ' get base address of Tx Queue
+                mov     p_queue, 0-0
+                incmod  queIdx, #BUF_SIZE-1         ' increment txQHead index (modulus math)
+                add     p_queue, queIdx             ' add-in offset to head
+                rdbyte  newChar, p_queue            ' read char from queue[head]
+                wypin   newChar, txd                ' tell tx pin to send this character
 
-                wrlong    queIdx, p_txhead_idx       ' write head index back to hub
-'                outnot    pinTskTx                   ' LA INSTRU.
+                wrlong  queIdx, p_txhead_idx        ' write head index back to hub
+'                outnot  pinTskTx                    ' LA INSTRU.
                 ret
                 '-------------------------------
 
-'pgrpPortNbr     long      LA_BASE_PIN addpins 2
-'pinTskTx        long      LA_TX_PIN addpins 0
-'pinTskRx        long      LA_RX_PIN addpins 0
-'laPortMask      long      %00000000_00000000_00000111_00000000   ' LA port # on pins 8-10 (OUTA)
-trueBOOL        LONG      TRUE
+'pgrpPortNbr     LONG    LA_BASE_PIN addpins 2
+'pinTskTx        LONG    LA_TX_PIN addpins 0
+'pinTskRx        LONG    LA_RX_PIN addpins 0
+'laPortMask      LONG    %00000000_00000000_00000111_00000000   ' LA port # on pins 8-10 (OUTA)
+trueBOOL        LONG    TRUE
 
 
-portnum         LONG      1                          ' total # ports
-rxpin           LONG      0[MAX_PORTS]                ' rx pin array
-txpin           LONG      0[MAX_PORTS]                ' tx pin array
-p_rxbuf         LONG      0[MAX_PORTS]                ' ptr to pRxBuf
-p_txbuf         LONG      0[MAX_PORTS]                ' ptr to pTxBuf
-p_rxhead        LONG      0[MAX_PORTS]                ' ptr to rxHeadIdx
-p_txhead        LONG      0[MAX_PORTS]                ' ptr to txHeadIdx
-p_rxtail        LONG      0[MAX_PORTS]                ' prt to rxTailIdx
-p_txtail        LONG      0[MAX_PORTS]                ' prt to txTailIdx
-p_rxOvflw       LONG      0[MAX_PORTS]                ' RX Overflow Flags
+portnum         LONG    1                           ' total # ports
+rxpin           LONG    0[MAX_PORTS]                ' rx pin array
+txpin           LONG    0[MAX_PORTS]                ' tx pin array
+p_rxbuf         LONG    0[MAX_PORTS]                ' ptr to pRxBuf
+p_txbuf         LONG    0[MAX_PORTS]                ' ptr to pTxBuf
+p_rxhead        LONG    0[MAX_PORTS]                ' ptr to rxHeadIdx
+p_txhead        LONG    0[MAX_PORTS]                ' ptr to txHeadIdx
+p_rxtail        LONG    0[MAX_PORTS]                ' prt to rxTailIdx
+p_txtail        LONG    0[MAX_PORTS]                ' prt to txTailIdx
+p_rxOvflw       LONG    0[MAX_PORTS]                ' RX Overflow Flags
 
-portctr         res       1                          ' loop counter
-rxd             res       1                          ' rx pin
-txd             res       1                          ' tx pin
-p_rxhead_idx    res       1
-p_rxtail_idx    res       1
-p_txhead_idx    res       1
-p_txtail_idx    res       1
-p_queue         res       1                          ' work vars
-queIdx          res       1
-newChar         res       1
-bitsForLA       res       1
+portctr         res     1                           ' loop counter
+rxd             res     1                           ' rx pin
+txd             res     1                           ' tx pin
+p_rxhead_idx    res     1
+p_rxtail_idx    res     1
+p_txhead_idx    res     1
+p_txtail_idx    res     1
+p_queue         res     1                           ' work vars
+queIdx          res     1
+newChar         res     1
+bitsForLA       res     1
 
-'                fit       472                       ' $1D8 P1
-                fit     496                          ' $1f0 P2
+'                fit     472                         ' $1D8 P1
+                fit     496                         ' $1f0 P2
 
 
 CON { license }
