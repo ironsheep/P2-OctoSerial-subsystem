@@ -19,7 +19,14 @@ CON { timing }
 '  US_001   = CLK_FREQ / 1_000_000                               ' ticks in 1us
 
   BAUD_PST  = 115_200                                            ' terminal baud rate
-  BAUD_OCTO_PORTS  = 115_200                                    ' our serial ports baud rate
+'  BAUD_OCTO_PORTS  = 115_200                                    ' our serial ports baud rate
+'  BAUD_OCTO_PORTS  = 230_400                                    ' our serial ports baud rate
+'  BAUD_OCTO_PORTS  = 640_000                                    ' our serial ports baud rate
+'  BAUD_OCTO_PORTS  = 2_000_000                                    ' our serial ports baud rate
+  BAUD_OCTO_PORTS  = 2_995_200                                    ' our serial ports baud rate (26x 115200)
+'  BAUD_OCTO_PORTS  = 3_456_000                                    ' NOPE! our serial ports baud rate (30x 115200)
+'  BAUD_OCTO_PORTS  = 4_032_000                                    ' NOPE! our serial ports baud rate (35x 115200)
+'  BAUD_OCTO_PORTS  = 4_953_600                                    ' NOPE! our serial ports baud rate (43x 115200)
 
   _clkfreq = CLK_FREQ                                           ' set system clock
 
