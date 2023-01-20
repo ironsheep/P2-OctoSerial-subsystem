@@ -25,7 +25,13 @@ Additional pages:
 
 ### Driver Features
 
-... *coming soon* ...
+Key Features of this driver:
+
+- Round robbin handling of active ports (not priority based)
+- Only active ports are in round robbin
+- 8 Active tx/rx port pairs Certified to 26x 115_200 -> 2\_995\_200 baud (w/clk at 300 MHz)
+  - Hours of traffic run through all 8 ports P2 <-> P2 with no data corruption or loss at speed
+  - All bytes of each message verified
 
 ### Current status
 
