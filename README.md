@@ -20,6 +20,7 @@ On this Page:
 
 Additional pages:
 
+- [Performance Measurement](VERIFY.md) - see timing information from measurements taken on 8-port test system
 - [Add serial ports to your project using this object](DEVELOP.md) - Walks thru configuration and setup of serial ports in your own project
 
 ### Driver Features
@@ -31,6 +32,14 @@ Additional pages:
 Latest Changes:
 
 ```
+2023-01-19 Further testing results
+- Tested with no failures at speeds (clock at 300MHz):
+  - 115_200
+  - 230_400 - 2x 115_200
+  - 640_000
+  - 2_000_000
+  - 2_995_200 - 26x 115_200
+  - Fails at 3_456_000 and above
 2022-11-23 Draft release v1.0.0
 - Services 1 to eight ports
 - Tested initial configuration: 115,200 bps, N81
