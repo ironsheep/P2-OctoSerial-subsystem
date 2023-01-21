@@ -23,7 +23,7 @@ Additional pages:
 
 When putting this driver through its paces, we clocked the p2 at 300 MHz and set the desired baud rate the same on both ends.  8 two-pin pairs are wired between the sending P2 and the receiving P2.  The sending end serial code is instrumented to send out port address, and tx/rx handler active statuses. I've also added a 3.3v to 5v level shifter to 1 port tx/rx pins so we can observe the serial traffic on this one port.  This allows us to get a sense of the timing of serial bits relative to the port scanning activity within the driver.
 
-During this investication we found that at a clock of 300 Mhz the baud rate is limited to below 30 x 115,200 bps.  The maximum we successfully tested is 26 x 115,200 bps or 2,995,200 bits per second.
+During this investigation we found that at a clock of 300 Mhz the baud rate is limited to below 29 x 115,200 bps.  The maximum we successfully tested is 28 x 115,200 bps or 3,225,600 bits per second.
 
 This is our test hardware setup:
 
@@ -31,40 +31,42 @@ This is our test hardware setup:
 
 We took measurements using this Logic Analyzer (LA) setup.  The following are screen captures with brief narrative for each set of captures.  The captures show the overall traffic alone with a transmit image and a receive image.
 
-### 8 ports at 640 kbit
+### Results: 8 ports at 640 kbit
 
-![Overview](./images/LA 160310 73.82 2MB-ovr.png)
+![Overview](./images/LA-152052-74.2-640kb-ovr.png)
 <p align="center">
-  <caption>Figure 1-A - 640 kbit Overview</caption><br>
+  <caption><B>Figure 1-A - 640 kbit Overview</B></caption><br>
 </p>
 
-![Overview](./images/LA 160310 73.82 2MB-tx.png)
+![Overview](./images/LA-152052-74.2-640kb-tx.png)
 <p align="center">
-  <caption>Figure 1-B - 640 kbit Transmit</caption><br>
+  <caption><B>Figure 1-B - 640 kbit Transmit</B></caption><br>
 </p>
 
-![Overview](./images/LA 160310 73.82 2MB-rx.png)
+![Overview](./images/LA-152052-74.2-640kb-rx.png)
 <p align="center">
-  <caption>Figure 1-C - 640 kbit Receive</caption><br>
+  <caption><B>Figure 1-C - 640 kbit Receive</B></caption><br>
 </p>
 
 
-### 8 ports at 2.995 mbit
+### Results: 8 ports at 3.225 mbit
 
-![Overview](./images/LA 172447 127.9 2.995MB-ovr.png)
+![Overview](./images/LA-143855-73.8-3225MB-ovr.png)
 <p align="center">
-  <caption>Figure 1-A - 2.995 mbit Overview</caption><br>
+  <caption><B>Figure 2-A - 3.225 mbit Overview</B></caption><br>
 </p>
 
-![Overview](./images/LA 172447 127.9 2.995MB-tx.png)
+![Overview](./images/LA-143855-73.8-3225MB-tx.png)
 <p align="center">
-  <caption>Figure 1-B - 2.995 mbit Transmit</caption><br>
+  <caption><B>Figure 2-B - 3.225 mbit Transmit</B></caption><br>
 </p>
 
-![Overview](./images/LA 172447 127.9 2.995MB-rx.png)
+![Overview](./images/LA-143855-73.8-3225MB-rx.png)
 <p align="center">
-  <caption>Figure 1-C - 2.995 mbit Receive</caption><br>
+  <caption><B>Figure 2-C - 3.225 mbit Receive</B></caption><br>
 </p>
+
+**NOTE**: the rx side is starting to get jittery in terms of distances in-time between bytes.
 
 ---
 
