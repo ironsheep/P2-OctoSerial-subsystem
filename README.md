@@ -1,5 +1,5 @@
 # P2-OctoSerial-subsystem
-A Parallax Propeller v2 Object for maintaining 2-8 simultaneous serial ports using one COG
+A Parallax Propeller v2 Object for maintaining 1-8 simultaneous serial ports using one COG
 
 ![Project Maintenance][maintenance-shield]
 
