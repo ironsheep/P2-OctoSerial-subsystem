@@ -41,7 +41,7 @@ CON { fixed io pins }
   SF_SDI   = 58  { I }
 
 OBJ
-        serPorts  : "isp_octoport_serial_wLA"               ' 8-port driver
+        serPorts  : "isp_octoport_serial"               ' 8-port driver
         serQue    : "isp_string_queue"                  ' Rx Message Que
         strFmt    : "isp_mem_strings"                  ' in-memory formatted strings
         utils     : "test_utils"                  ' common routines for both ends of test mech
